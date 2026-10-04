@@ -1,6 +1,7 @@
 # CQR project context (read first)
 
-Last session: 2026-10-04 (second session: first real-world print test). Private repo:
+Last session: 2026-10-04 (second session: first real-world print test, then complementary
+C/M/Y finder cores + new palette initialisation; the cmy_cores page is NOT printed yet). Private repo:
 https://github.com/Karolops/CQR_codes (branch `main`, pushed over HTTPS with the GitHub login
 stored in Git Credential Manager, user `Karolops`; GitHub CLI `gh` is NOT installed - the
 repo was created with the REST API).
@@ -11,7 +12,11 @@ CQR = coloured QR code. Exact ISO/IEC 18004 QR geometry (versions 1-40, same fin
 timing / alignment / format / version positions, same zig-zag placement), but each data
 module carries several bits in its colour. The three finders are coloured red (top-left),
 green (top-right), blue (bottom-left); together with the black/white function modules they
-are the colour calibration references and resolve orientation/mirroring. Colour resolution
+are the colour calibration references and resolve orientation/mirroring. Since 2026-10-04
+the 3x3 core of each finder carries the complementary colour (cyan in red, magenta in
+green, yellow in blue; `encode(core_complement=True)` default, `--plain-finders` to
+disable) so that all 8 cube corners are measured; the decoder auto-detects both variants.
+Colour resolution
 is a "profile" stored in the 5-bit format payload (2 bits EC level L/M/Q/H in QR encoding +
 3 bits profile index):
 
@@ -62,10 +67,13 @@ sampling (3x3 sub-grid, 50 % spread; retried with 2x2 / 30 % if decoding fails) 
 polynomial white/black shading fields -> 3x3 affine colour calibration (used for format
 reading and to seed the palette model) -> **palette model** (cqr/palette.py: tensor-product
 polynomial from palette coordinates to camera colour, multilinear = Neugebauer corner
-interpolation + quadratic terms per axis; corners seeded from directional extremes of the
-data cloud, per-axis tone curves from 1-D quantile centroids; hard EM over the data modules
-anchored by the labelled function modules; interference cancellation in camera space;
-nearest-colour classification under a Mahalanobis metric from the residual covariance) ->
+interpolation + quadratic terms per axis). Init: (1) multilinear model of the 8 corners
+from the labelled function modules (rings R/G/B, cores C/M/Y, white, black; with plain
+finders C/M/Y come from directional extremes of the data cloud), (2) invert it per data
+module (batched Gauss-Newton, `palette.invert_model`) and estimate the level positions
+(tone curves) + initial labels axis by axis with 1-D quantile k-means, (3) hard EM
+anchored by the function modules, interference cancellation in camera space,
+nearest-colour classification under a Mahalanobis metric from the residual covariance ->
 confidence per module -> RS decoding with erasures on least confident symbols. Fallback if
 that fails: the old per-channel 1-D k-means classifier in affine-corrected space. Results
 with uncorrectable blocks raise ValueError (never returned).
@@ -82,22 +90,30 @@ with uncorrectable blocks raise ValueError (never returned).
 - **Real-world print test done (2026-10-04)**, Brother CMY inkjet print on plain paper + phone photos, details
   in research/04 "Real-world print test": rgb111 decodes with 0 module errors on close-ups
   of 1.02 and 0.51 mm modules and from a whole-page photo at 9 px/module (18/18 symbols
-  detected on the page; mono decodes down to 6 px/module). rgb221 / rgb222 / rgb332 /
-  rgb333 all fail in print: the printer (subtractive CMY, gamut compression, dot gain) puts
-  neighbouring palette colours 1.3-1.5 sigma apart; even an oracle classifier with the true
-  colour means has 7-12 % module errors. 8 colours is the practical print ceiling without a
-  printer-specific calibration.
+  detected on the page; mono decodes down to 6 px/module). With the final decoder the
+  page photo also yields C1 (rgb221, 1.02 mm): 6/18. rgb222 and denser still fail in print:
+  neighbouring printed colours are 1.3-1.5 sigma apart; even an oracle classifier with the
+  true colour means has 7-12 % module errors. The close-up palette errors are now 20 %
+  (rgb221, rgb222) vs oracle 12 % / 7 %.
+- **Complementary finder cores** (research/03 section 9): on a simulated subtractive print
+  built from the measured palette, rgb221/rgb222 go from 0-2 of 4 decoded (plain) to 4/4
+  with 0-1 % module errors (C/M/Y cores). The test page `print_test/cmy_cores/` is waiting
+  to be printed and photographed (`decode_photo.py ... --manifest print_test/cmy_cores/manifest.json`).
 - Measured printed rgb111 palette (camera RGB, B1): K 25,25,27 R 190,61,79 G 24,128,46
   B 29,70,132 C 4,124,171 M 181,50,114 Y 206,172,12 W 193,192,190 - secondaries are far
   from additive (that is why the affine calibration misread 100 % of cyan / magenta).
 
 ## Next steps
 
-1. Print-specific palette profile (8 corners + gamut-aware intermediates) and/or a stored
-   printer calibration profile (chart with known labels) to get 5-6 bits/module in print.
-2. More photos: rgb111 at 0.68 / 0.51 mm from normal phone distance; rgb221 at 1.5-2 mm
+1. Print `print_test/cmy_cores/cqr_print_test_A4.pdf` (100 % scale), photograph the page and
+   close-ups, decode with `--manifest print_test/cmy_cores/manifest.json`, compare with the
+   plain page (expect rgb221 to become reliable at 1.02 mm; rgb222 is the open question).
+   Also try photo/glossy paper and the driver's plain-sRGB mode.
+2. Print-specific palette profile (8 corners + gamut-aware intermediates) and/or a stored
+   printer calibration profile (chart with known labels) to get 6+ bits/module in print.
+3. More photos: rgb111 at 0.68 / 0.51 mm from normal phone distance; rgb221 at 1.5-2 mm
    modules and under good light to find where 5 bits/module starts working.
-3. Open ideas in TODO.md: structured append, legacy-QR-readable luminance layer, local grid
+4. Open ideas in TODO.md: structured append, legacy-QR-readable luminance layer, local grid
    refinement for lens distortion, soft/annealed EM for > 64 printed colours.
 
 ## How to run the photo tests
@@ -117,6 +133,13 @@ with uncorrectable blocks raise ValueError (never returned).
 - Module size from axis-aligned run scanning is inflated by 1/cos(rotation); corrected in
   estimate_geometry. The finder-centre line is on module row 3.5, NOT the timing row.
 - Byte-sized RS symbols straddle 9/12-bit modules -> that is why GF(2^9)/GF(2^12) are used.
+- RS erasure attempts must stay <= 3E/4: with E-1 erasures reedsolo accepts random input
+  in 40-60 % of cases (one check symbol left) -> garbage decodes with ok=True. Fixed in
+  ecc.rs_decode; always verify against the known payload in experiments.
+- Palette EM: initialising from the (measured or extreme-based) corner model and then
+  inverting it per module before the 1-D level estimation was the decisive step (simulated
+  print: 31-37 % errors -> 0 % with an oracle of 0 %). Hard EM from a poor init does not
+  recover; a capacity check (fit from true labels) tells init problems from model problems.
 - Palette EM: hard EM with per-channel weighting split overlapping red/magenta clusters along
   the brightness axis (capture noise is correlated across channels) - the full-covariance
   Mahalanobis metric fixed it. For 8/16-level channels the EM only converges when the tone
@@ -131,8 +154,8 @@ with uncorrectable blocks raise ValueError (never returned).
 - This machine: Windows 10, Python 3.12 (Microsoft Store), numpy/pillow/opencv/reedsolo/
   segno/pytest installed. In the Bash tool, long heredocs containing triple quotes fail
   with "unexpected EOF" - write patch scripts to a file with the Write tool and run them.
-  Scratchpad scripts (diag_photo.py, oracle.py, exp_capacity.py, page.py) are not in the
-  repo; their results are recorded in research/04.
+  Scratchpad scripts (diag_photo.py, oracle.py, exp_capacity.py, exp_cmy_cores.py,
+  exp_em2.py) are not in the repo; their results are recorded in research/03 and 04.
 - Git: identity Karol_Niedbało <KarolNI@o2.pl>; commits end with
   `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Line endings: repo files are
   LF, git warns about CRLF conversion - harmless. The session's changes were left

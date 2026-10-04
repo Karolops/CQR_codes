@@ -163,7 +163,10 @@ def rs_decode(msg: Sequence[int], bs: BlockStructure,
         attempts: List[List[int]] = [[]]
         if rel_blocks is not None:
             order = list(np.argsort(np.asarray(rel_blocks[b])))  # least reliable first
-            for k in sorted({E // 4, E // 2, (3 * E) // 4, E - 1}):
+            # Never erase more than 3E/4 symbols: with E-1 erasures a single check
+            # symbol remains and reedsolo accepts random input in ~40 % of cases
+            # (measured: 0/150 false accepts at 3E/4, 2-3 % at E-8, 40-60 % at E-1).
+            for k in sorted({E // 4, E // 2, (3 * E) // 4}):
                 if 0 < k < E:
                     attempts.append([int(i) for i in order[:k]])
         for erase in attempts:

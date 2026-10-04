@@ -23,11 +23,13 @@ def main():
     ap.add_argument("--max-side", type=int, default=None,
                     help="downscale long side to this many pixels (default 2500 for one symbol, no downscaling with --all)")
     ap.add_argument("--all", action="store_true", help="detect and decode every symbol in the photo")
+    ap.add_argument("--manifest", default=os.path.join(os.path.dirname(__file__), "..", "print_test", "manifest.json"),
+                    help="manifest to compare against (print_test/cmy_cores/manifest.json for the C/M/Y-core page)")
     a = ap.parse_args()
     img = ImageOps.exif_transpose(Image.open(a.photo)).convert("RGB")
     man = None
     if a.id:
-        with open(os.path.join(os.path.dirname(__file__), "..", "print_test", "manifest.json"), encoding="utf-8") as fh:
+        with open(a.manifest, encoding="utf-8") as fh:
             man = json.load(fh)[a.id]
     if a.crop:
         img = img.crop(tuple(a.crop))
@@ -40,7 +42,7 @@ def main():
         s = max_side / max(img.size)
         img = img.resize((int(img.width * s), int(img.height * s)), Image.LANCZOS)
     if a.all:
-        return decode_page(np.asarray(img))
+        return decode_page(np.asarray(img), a.manifest)
     try:
         rep = decode_image(np.asarray(img), return_report=True)
     except ValueError as exc:
@@ -48,7 +50,7 @@ def main():
         return
     g, res = rep.geometry, rep.result
     print(f"version {g.version}, timing score {g.timing_score:.3f}, alignment patterns {g.n_alignment}, "
-          f"profile {res.profile.name}, EC {res.ec_level}")
+          f"profile {res.profile.name}, EC {res.ec_level}, finder cores {'C/M/Y' if rep.core_complement else 'plain'}")
     print(f"RS corrected {res.corrected_codewords}, failed blocks {res.failed_blocks}, mean confidence {rep.mean_confidence:.3f}, "
           f"leak {np.round(rep.leak, 3)}")
     for name, v in rep.calibration.refs_measured.items():
@@ -58,8 +60,8 @@ def main():
         print("MATCH" if res.ok and res.data == man["payload"] else "MISMATCH", "with manifest", a.id)
 
 
-def decode_page(arr):
-    with open(os.path.join(os.path.dirname(__file__), "..", "print_test", "manifest.json"), encoding="utf-8") as fh:
+def decode_page(arr, manifest_path):
+    with open(manifest_path, encoding="utf-8") as fh:
         man = json.load(fh)
     by_payload = {v["payload"]: k for k, v in man.items()}
     results = decode_all(arr, return_report=True)
@@ -78,8 +80,8 @@ def decode_page(arr):
         sid = by_payload.get(d.data)
         ok += sid is not None
         tag = f"MATCH {sid}" if sid else f"decoded but not in manifest: {d.data!r}"[:80]
-        print(f"  {where}: V{rep.geometry.version} {d.profile.name}/{d.ec_level} RS corrected {d.corrected_codewords:3d} "
-              f"conf {rep.mean_confidence:.2f} -> {tag}")
+        print(f"  {where}: V{rep.geometry.version} {d.profile.name}/{d.ec_level} {'cmy' if rep.core_complement else 'rgb'} "
+              f"RS corrected {d.corrected_codewords:3d} conf {rep.mean_confidence:.2f} -> {tag}")
     print(f"{ok}/{len(results)} decoded and matched the manifest")
 
 

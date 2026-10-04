@@ -86,3 +86,18 @@ def test_large_symbol_perspective():
     rep = decode_image(cam, return_report=True)
     assert rep.geometry.version == sym.version
     assert rep.result.ok and rep.result.data == payload
+
+
+@pytest.mark.parametrize("core_complement", [True, False])
+@pytest.mark.parametrize("profile", ["rgb111", "rgb222"])
+def test_finder_core_variants(core_complement, profile):
+    """Both finder variants decode; the decoder detects which one it sees."""
+    payload = _payload(60)
+    sym = codec.encode(payload, ec_level="M", profile=profile, version=3, core_complement=core_complement)
+    img = render.to_array(sym, module_px=8)
+    cam = simulate(img, CameraParams(module_px=6.0, rotation_deg=12, tilt=0.1, blur_sigma=0.8, noise_sigma=0.02,
+                                     color_cast=(1.05, 1.0, 0.9), gamma=1.2, jpeg_quality=85, seed=3))
+    rep = decode_image(cam, return_report=True)
+    assert rep.result.ok and rep.result.data == payload
+    assert rep.core_complement == core_complement
+    assert ("cyan" in rep.calibration.refs_measured) == core_complement

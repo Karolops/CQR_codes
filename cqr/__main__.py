@@ -24,6 +24,8 @@ def main(argv=None) -> int:
     e.add_argument("-s", "--scale", type=int, default=10, help="pixels per module")
     e.add_argument("-z", "--compress", action="store_true", help="zlib-compress the payload if that helps")
     e.add_argument("-q", "--quiet", type=int, default=4, help="quiet zone in modules (QR standard 4; 1 works with this decoder)")
+    e.add_argument("--plain-finders", action="store_true",
+                   help="plain R/G/B finders (default: cyan / magenta / yellow finder cores as extra colour references)")
 
     d = sub.add_parser("decode", help="decode a CQR image")
     d.add_argument("image")
@@ -43,7 +45,8 @@ def main(argv=None) -> int:
             payload = a.data
         else:
             ap.error("provide text or --file")
-        sym = codec.encode(payload, ec_level=a.ec, profile=a.profile, version=a.version, compress=a.compress)
+        sym = codec.encode(payload, ec_level=a.ec, profile=a.profile, version=a.version, compress=a.compress,
+                           core_complement=not a.plain_finders)
         render.save(sym, a.out, module_px=a.scale, quiet=a.quiet)
         print(f"wrote {a.out}: version {sym.version} ({sym.size}x{sym.size} modules), profile {sym.profile.name} "
               f"({sym.profile.bits_per_module} bits/module), EC {sym.ec_level}, payload {sym.payload_bytes} B "
@@ -61,7 +64,8 @@ def main(argv=None) -> int:
             g = rep.geometry
             print(f"version {g.version} ({g.size}x{g.size}), timing score {g.timing_score:.3f}, "
                   f"alignment patterns used: {g.n_alignment}", file=sys.stderr)
-            print(f"profile {res.profile.name}, EC {res.ec_level}, format bit errors {rep.format_errors}", file=sys.stderr)
+            print(f"profile {res.profile.name}, EC {res.ec_level}, format bit errors {rep.format_errors}, "
+                  f"finder cores {'C/M/Y' if rep.core_complement else 'plain'}", file=sys.stderr)
             print(f"RS corrected codewords: {res.corrected_codewords}, failed blocks: {res.failed_blocks}, "
                   f"mean module confidence {rep.mean_confidence:.3f}", file=sys.stderr)
             for name, v in rep.calibration.refs_measured.items():

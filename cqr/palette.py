@@ -195,11 +195,11 @@ class PaletteFit:
     history: List[int] = field(default_factory=list)
 
 
-def _function_module_training(L: layout.Layout, prof, model: PaletteModel):
+def _function_module_training(L: layout.Layout, prof, model: PaletteModel, core_complement: bool = False):
     """Masks and ideal palette coordinates of the labelled function-pattern modules."""
     kind = L.kind
     known = ~np.isin(kind, (layout.K_DATA, layout.K_FORMAT, layout.K_VERSION))
-    ideal = codec.function_pattern_colors(L.version, "L", prof).astype(np.float64) / 255.0
+    ideal = codec.function_pattern_colors(L.version, "L", prof, core_complement).astype(np.float64) / 255.0
     return known, model.rgb_to_u(ideal[known]), ideal
 
 
@@ -219,13 +219,44 @@ def _corner_training(corrected_d: np.ndarray, norm_d: np.ndarray, model: Palette
     return np.concatenate(U), np.concatenate(Y)
 
 
+def invert_model(model: PaletteModel, Y: np.ndarray, iters: int = 8, damping: float = 1e-3) -> np.ndarray:
+    """Continuous palette coordinates u (n, k) such that model.predict(u) ~ Y, by batched
+    Gauss-Newton from the centre of the cube.  Used to undo the (measured) colour mixing
+    before the per-axis level estimation: in u-space the axes are separable again."""
+    Y = np.asarray(Y, dtype=np.float64).reshape(-1, 3)
+    n, k = len(Y), model.k
+    u = np.full((n, k), 0.5)
+    eps = 1e-3
+    for _ in range(iters):
+        r = Y - model.predict(u)                                         # (n, 3)
+        J = np.empty((n, 3, k))
+        for c in range(k):
+            du = u.copy()
+            du[:, c] += eps
+            J[:, :, c] = (model.predict(du) - (Y - r)) / eps
+        JtJ = np.einsum("nic,nid->ncd", J, J) + damping * np.eye(k)[None]
+        Jtr = np.einsum("nic,ni->nc", J, r)
+        step = np.linalg.solve(JtJ, Jtr[..., None])[..., 0]
+        u = np.clip(u + np.clip(step, -0.5, 0.5), -0.25, 1.25)
+    return u
+
+
 def fit_palette(norm: np.ndarray, corrected: np.ndarray, prof, L: layout.Layout,
                 max_iter: int = 12, interference: bool = True, anchor_weight: float = 0.5,
-                max_degree: int = 2) -> PaletteFit:
+                max_degree: int = 2, core_complement: bool = False) -> PaletteFit:
     """Fit the palette model to one symbol and classify its data modules.
 
     norm:      (size, size, 3) shading-normalised samples (white field -> 1, black field -> 0)
     corrected: (size, size, 3) affine-calibrated samples (only used to seed the corners)
+    core_complement: the finder cores are cyan / magenta / yellow (measured secondaries)
+
+    Stages: (1) multilinear (Neugebauer) model of the 8 cube corners - from the labelled
+    function modules alone when the finder cores provide C/M/Y, otherwise completed with
+    the directional extremes of the data cloud; (2) invert it to get continuous palette
+    coordinates of every data module and estimate the per-axis level positions (tone
+    curves) and initial labels with 1-D quantile k-means, axis by axis; (3) hard EM with
+    the full tensor-product model, neighbour interference cancellation and a Mahalanobis
+    metric from the residual covariance.
     """
     size = L.size
     rows, cols = L.data_order[:, 0], L.data_order[:, 1]
@@ -235,32 +266,48 @@ def fit_palette(norm: np.ndarray, corrected: np.ndarray, prof, L: layout.Layout,
     while model.n_terms * 12 > n_data and max(model.degrees) > 1:
         max_degree -= 1
         model = PaletteModel(prof, max_degree=max_degree)
-    known, U_fn, ideal = _function_module_training(L, prof, model)
+    known, U_fn, ideal = _function_module_training(L, prof, model, core_complement)
     norm_d = norm[rows, cols]
-    model.palette_u = _tone_mapped_palette(model, corrected[rows, cols])
+    combos = np.rint(model.palette_u * (np.array(model.n_levels) - 1)[None, :]).astype(int)
 
-    # ---- initial fit: multilinear, from corner extremes + labelled function modules
+    # ---- (1) multilinear corner model
     U0 = [U_fn]
     Y0 = [norm[known]]
-    W0 = [np.full(int(known.sum()), anchor_weight)]
-    if not prof.gray:
+    W0 = [np.full(int(known.sum()), 1.0 if core_complement else anchor_weight)]
+    if not prof.gray and not core_complement:
         Uc, Yc = _corner_training(corrected[rows, cols], norm_d, model)
         U0.append(Uc); Y0.append(Yc); W0.append(np.ones(len(Uc)))
     model.fit(np.concatenate(U0), np.concatenate(Y0), np.concatenate(W0), degrees=[1] * model.k)
 
+    # ---- (2) per-axis tone tables and initial labels in the un-mixed coordinates
+    u_hat = invert_model(model, norm_d)
+    tables = []
+    labels = np.zeros((n_data, model.k), dtype=np.int64)
+    for c, n in enumerate(model.n_levels):
+        cen = _axis_centroids(u_hat[:, c], n)
+        labels[:, c] = np.abs(u_hat[:, c][:, None] - cen[None, :]).argmin(axis=1)
+        t = (cen - cen[0]) / max(cen[-1] - cen[0], 1e-6)
+        tables.append(np.clip(np.maximum.accumulate(t), 0.0, 1.0))
+    model.palette_u = np.stack([tables[c][combos[:, c]] for c in range(model.k)], axis=1)
+    idx = np.zeros(n_data, dtype=np.int64)
+    for c, n in enumerate(model.n_levels):
+        idx = idx * n + labels[:, c]
+
+    # ---- (3) EM
     cleaned = norm.copy()
     alpha = np.zeros(3)
     W = np.eye(3)
     std = np.full(3, 0.05)
-    prev = None
     history = []
     changed = n_data
     it = 0
     for it in range(1, max_iter + 1):
-        idx, conf = model.classify(cleaned[rows, cols], W)
-        changed = n_data if prev is None else int((idx != prev).sum())
-        history.append(changed)
         U_d = model.palette_u[idx]
+        # M-step: refit the full model on the (cleaned) data modules + anchors
+        U = np.concatenate([U_d, U_fn])
+        Yfit = np.concatenate([cleaned[rows, cols], cleaned[known]])
+        Wfit = np.concatenate([np.ones(n_data), np.full(int(known.sum()), anchor_weight)])
+        model.fit(U, Yfit, Wfit)
         # neighbour interference cancellation in camera space using the model prediction
         if interference:
             pred = np.empty_like(norm)
@@ -278,17 +325,15 @@ def fit_palette(norm: np.ndarray, corrected: np.ndarray, prof, L: layout.Layout,
                 alpha[c] = float((x[:, c] * y[:, c]).sum() / xx) if xx > 1e-9 else 0.0
             alpha = np.clip(alpha, 0.0, 0.3)
             cleaned = norm - nsum * alpha[None, None, :]
-        # M-step: refit on the (cleaned) data modules + anchors
-        U = np.concatenate([U_d, U_fn])
-        Y = np.concatenate([cleaned[rows, cols], cleaned[known]])
-        W = np.concatenate([np.ones(n_data), np.full(int(known.sum()), anchor_weight)])
-        model.fit(U, Y, W)
         resid = cleaned[rows, cols] - model.predict(U_d)
         W, std = whitening_matrix(resid)
-        if prev is not None and changed <= max(0, n_data // 1000):
+        # E-step
+        new_idx, conf = model.classify(cleaned[rows, cols], W)
+        changed = int((new_idx != idx).sum())
+        history.append(changed)
+        idx = new_idx
+        if changed <= max(0, n_data // 1000):
             break
-        prev = idx
-    idx, conf = model.classify(cleaned[rows, cols], W)
     levels = model.palette_levels[idx]
     resid = cleaned[rows, cols] - model.palette_rgb[idx]
     return PaletteFit(model, levels, conf, alpha, std, W, it, changed,

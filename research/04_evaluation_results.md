@@ -263,3 +263,19 @@ rgb333 M phone-good 0 % -> 100 %; rgb444 L scanner 60 % -> 100 %; rgb444 Q scann
 100 %; rgb444 Q screen 100 % -> 50 % (one seed, 6 % module errors). Best profile per preset
 is now screen rgb444/L 8.47, scanner rgb444/L 8.47, phone-good rgb332/L 5.60, phone-poor
 rgb111/L 2.08 net bits per module.
+
+### Update after the complementary-core work (same photos, decoder of 2026-10-04 evening)
+
+The new palette initialisation (invert the corner model, estimate levels axis by axis,
+see research/03 section 9) changed the results on the *same plain-finder photos*:
+
+| photo | profile | palette module errors before -> after | decode |
+|---|---|---|---|
+| C1 close-up | rgb221 | 28 % -> 20 % (oracle 12 %) | still fails |
+| D1 close-up | rgb222 | 40 % -> 20 % (oracle 7 %) | still fails |
+| C1 on the page photo (13 px/module) | rgb221 | - | **decodes**, 48 RS corrections |
+| B2 on the page photo | rgb111 | - | decodes with 13 instead of 39 corrections |
+
+Whole page: 6/18 (A1-A3, B1, B2, C1). A page with cyan / magenta / yellow finder
+cores is in `print_test/cmy_cores/` (decode with
+`python tests/decode_photo.py photo.jpg --all --manifest print_test/cmy_cores/manifest.json`).

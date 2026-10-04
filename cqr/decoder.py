@@ -82,7 +82,8 @@ class FinderCandidate:
     module: float
     votes: int = 1
     score: float = 0.0
-    purity: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    purity: Tuple[float, float, float] = (0.0, 0.0, 0.0)   # ring purity per channel
+    core: Tuple[float, float, float] = (0.0, 0.0, 0.0)     # mean RGB of the 3x3 core
 
 
 # ---------------------------------------------------------------------------
@@ -199,15 +200,25 @@ def _merge(cands: List[FinderCandidate], new: List[FinderCandidate]) -> None:
             cands.append(n)
 
 
-def _core_purity(img: np.ndarray, c: FinderCandidate) -> np.ndarray:
-    """Mean purity (R-max(G,B), ...) over the finder's 3x3 core."""
+def _finder_colours(img: np.ndarray, c: FinderCandidate) -> Tuple[np.ndarray, np.ndarray]:
+    """(mean purity (R-max(G,B), ...) of the finder's outer ring, mean RGB of its 3x3 core).
+    The ring identifies the finder colour; the core may carry the complementary colour."""
     h, w = img.shape[:2]
-    r = max(1, int(round(c.module * 1.2)))
-    x0, x1 = max(0, int(round(c.x)) - r), min(w, int(round(c.x)) + r + 1)
-    y0, y1 = max(0, int(round(c.y)) - r), min(h, int(round(c.y)) + r + 1)
-    patch = img[y0:y1, x0:x1].reshape(-1, 3).mean(axis=0)
-    return np.array([patch[0] - max(patch[1], patch[2]), patch[1] - max(patch[0], patch[2]),
-                     patch[2] - max(patch[0], patch[1])])
+    R = int(round(c.module * 3.6)) + 1
+    x0, x1 = max(0, int(round(c.x)) - R), min(w, int(round(c.x)) + R + 1)
+    y0, y1 = max(0, int(round(c.y)) - R), min(h, int(round(c.y)) + R + 1)
+    ys, xs = np.mgrid[y0:y1, x0:x1]
+    d = np.hypot(xs - c.x, ys - c.y) / max(c.module, 1e-6)
+    patch = img[y0:y1, x0:x1]
+    ring = patch[(d > 2.6) & (d < 3.4)]
+    core = patch[d < 1.2]
+    if len(ring) == 0:
+        ring = patch.reshape(-1, 3)
+    if len(core) == 0:
+        core = patch.reshape(-1, 3)
+    rm, cm = ring.mean(axis=0), core.mean(axis=0)
+    purity = np.array([rm[0] - max(rm[1], rm[2]), rm[1] - max(rm[0], rm[2]), rm[2] - max(rm[0], rm[1])])
+    return purity, cm
 
 
 def _refine_centre(dark: np.ndarray, c: FinderCandidate) -> None:
@@ -240,8 +251,10 @@ def finder_candidates(img: np.ndarray, step: Optional[int] = None) -> List[Finde
     for f in (0.5, 0.35, 0.65, 0.42, 0.58):
         binary = dark > lo + f * (hi - lo)
         _merge(cands, _scan_candidates(binary, step))
-    # purity maps as a second source
+    # purity maps as a second source (absolute value: a finder ring and its
+    # complementary core are both strongly "pure" in the same channel)
     for pm in purity_maps(img):
+        pm = np.abs(pm)
         pos = pm[pm > 0]
         if pos.size < 50:
             continue
@@ -252,7 +265,9 @@ def finder_candidates(img: np.ndarray, step: Optional[int] = None) -> List[Finde
             _merge(cands, _scan_candidates(pm > f * top, step))
     for c in cands:
         _refine_centre(dark, c)
-        c.purity = tuple(float(v) for v in _core_purity(img, c))
+        purity, core = _finder_colours(img, c)
+        c.purity = tuple(float(v) for v in purity)
+        c.core = tuple(float(v) for v in core)
     return cands
 
 
@@ -588,7 +603,7 @@ def calibrate(samples: np.ndarray, L: layout.Layout) -> Calibration:
     kind = L.kind
     meas = {}
     for name, which in (("red", 0), ("green", 1), ("blue", 2)):
-        meas[name] = np.median(norm[L.finder_mask(which)], axis=0)
+        meas[name] = np.median(norm[L.finder_ring_mask(which)], axis=0)
     white_mask = (kind == layout.K_SEPARATOR) | (kind == layout.K_FINDER_LIGHT) | (kind == layout.K_TIMING_LIGHT) \
         | (kind == layout.K_ALIGN_LIGHT)
     black_mask = (kind == layout.K_TIMING_DARK) | (kind == layout.K_ALIGN_DARK) | (kind == layout.K_DARK_MODULE)
@@ -601,10 +616,28 @@ def calibrate(samples: np.ndarray, L: layout.Layout) -> Calibration:
     coef, *_ = np.linalg.lstsq(X * w[:, None], Y * w[:, None], rcond=None)
     raw_refs = {}
     for name, which in (("red", 0), ("green", 1), ("blue", 2)):
-        raw_refs[name] = np.median(samples[L.finder_mask(which)], axis=0)
+        raw_refs[name] = np.median(samples[L.finder_ring_mask(which)], axis=0)
     raw_refs["white"] = np.median(samples[white_mask], axis=0)
     raw_refs["black"] = np.median(samples[black_mask], axis=0)
+    if detect_core_complement(samples, L):
+        for name, which in (("cyan", 0), ("magenta", 1), ("yellow", 2)):
+            raw_refs[name] = np.median(samples[L.finder_core_mask(which)], axis=0)
     return Calibration(coef[:3, :].T, coef[3, :], raw_refs, white_f, black_f)
+
+
+def detect_core_complement(samples: np.ndarray, L: layout.Layout) -> bool:
+    """True when the finder cores carry the complementary colours (cyan in the red
+    finder, ...) instead of the ring colour.  Decided by majority over the three
+    finders from the core's saturation in the ring's own channel."""
+    votes = 0
+    for which in range(3):
+        ring = np.median(samples[L.finder_ring_mask(which)], axis=0)
+        core = np.median(samples[L.finder_core_mask(which)], axis=0)
+        others = [i for i in range(3) if i != which]
+        ring_sat = ring[which] - ring[others].mean()
+        core_sat = core[which] - core[others].mean()
+        votes += core_sat < 0.5 * ring_sat
+    return votes >= 2
 
 
 def classify_levels(values: np.ndarray, n_levels: int, refine: bool = True,
@@ -642,9 +675,10 @@ def classify_levels(values: np.ndarray, n_levels: int, refine: bool = True,
     return lab, conf, centroids
 
 
-def _ideal_matrix(corrected: np.ndarray, levels: np.ndarray, prof, L: layout.Layout) -> np.ndarray:
+def _ideal_matrix(corrected: np.ndarray, levels: np.ndarray, prof, L: layout.Layout,
+                  core_complement: bool = False) -> np.ndarray:
     """Ideal corrected colour of every module given the current data classification."""
-    ideal = codec.function_pattern_colors(L.version, "L", prof).astype(np.float64) / 255.0
+    ideal = codec.function_pattern_colors(L.version, "L", prof, core_complement).astype(np.float64) / 255.0
     rows, cols = L.data_order[:, 0], L.data_order[:, 1]
     if prof.gray:
         lv = levels[:, 0] / max(1, prof.levels[0] - 1)
@@ -658,7 +692,7 @@ def _ideal_matrix(corrected: np.ndarray, levels: np.ndarray, prof, L: layout.Lay
 
 
 def cancel_interference(corrected: np.ndarray, levels: np.ndarray, prof, L: layout.Layout,
-                        iters: int = 2) -> Tuple[np.ndarray, np.ndarray]:
+                        iters: int = 2, core_complement: bool = False) -> Tuple[np.ndarray, np.ndarray]:
     """Neighbour interference cancellation.
 
     Blur, chroma subsampling and ink spread mix each module with its 4
@@ -670,7 +704,7 @@ def cancel_interference(corrected: np.ndarray, levels: np.ndarray, prof, L: layo
     cleaned = corrected.copy()
     alpha = np.zeros(3)
     for _ in range(iters):
-        ideal = _ideal_matrix(corrected, levels, prof, L)
+        ideal = _ideal_matrix(corrected, levels, prof, L, core_complement)
         pad = np.pad(ideal, ((1, 1), (1, 1), (0, 0)), mode="edge")
         nsum = pad[:-2, 1:-1] + pad[2:, 1:-1] + pad[1:-1, :-2] + pad[1:-1, 2:] - 4 * ideal
         x = nsum[rows, cols]
@@ -701,6 +735,7 @@ class DecodeReport:
     confidence: np.ndarray
     leak: np.ndarray = field(default_factory=lambda: np.zeros(3))
     palette_fit: Optional["palette.PaletteFit"] = None   # None when the 1-D fallback was used
+    core_complement: bool = False                        # finder cores detected as C/M/Y references
 
 
 def classify_matrix(corrected: np.ndarray, prof, L: layout.Layout):
@@ -790,10 +825,12 @@ def _classify_and_decode(samples, corrected, cal, geo, L, ec, prof, fmt_err, ret
     # classification in the affine-calibrated space.
     pfit = None
     result = None
+    cc = "cyan" in cal.refs_measured          # complementary finder cores detected by calibrate()
     if palette_model:
         try:
             norm = (samples - cal.black_field) / np.maximum(cal.white_field - cal.black_field, 0.05)
-            pfit = palette.fit_palette(norm, corrected, prof, L, interference=interference_cancellation)
+            pfit = palette.fit_palette(norm, corrected, prof, L, interference=interference_cancellation,
+                                       core_complement=cc)
             result = codec.decode_levels(geo.version, ec, prof, pfit.levels, pfit.confidence)
             if not result.ok:
                 raise ValueError(f"RS decoding failed for {result.failed_blocks} block(s)")
@@ -804,7 +841,7 @@ def _classify_and_decode(samples, corrected, cal, geo, L, ec, prof, fmt_err, ret
         levels, confs, centroids = classify_matrix(corrected, prof, L)
         alpha = np.zeros(3)
         if interference_cancellation:
-            cleaned, alpha = cancel_interference(corrected, levels, prof, L)
+            cleaned, alpha = cancel_interference(corrected, levels, prof, L, core_complement=cc)
             levels, confs, centroids = classify_matrix(cleaned, prof, L)
         result = codec.decode_levels(geo.version, ec, prof, levels, confs)
         if not result.ok:
@@ -814,4 +851,4 @@ def _classify_and_decode(samples, corrected, cal, geo, L, ec, prof, fmt_err, ret
         centroids = [pfit.model.palette_rgb]
     if not return_report:
         return result
-    return DecodeReport(result, geo, cal, centroids, float(confs.mean()), fmt_err, levels, confs, alpha, pfit)
+    return DecodeReport(result, geo, cal, centroids, float(confs.mean()), fmt_err, levels, confs, alpha, pfit, cc)

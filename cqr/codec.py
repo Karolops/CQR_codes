@@ -30,6 +30,13 @@ BLUE = (0, 0, 255)
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 FINDER_COLORS = (RED, GREEN, BLUE)   # top-left, top-right, bottom-left
+CYAN, MAGENTA, YELLOW = (0, 255, 255), (255, 0, 255), (255, 255, 0)
+# Complementary finder cores (default since 2026-10-04): the 3x3 core of the red
+# finder is cyan, of the green finder magenta, of the blue finder yellow.  With
+# them all eight corners of the colour cube are measured references - printers
+# mix subtractively, so the secondaries cannot be predicted from the primaries.
+# The 1:1:3:1:1 finder profile is unchanged on the min-channel darkness image.
+FINDER_CORE_COLORS = (CYAN, MAGENTA, YELLOW)
 
 # Container header: 1 byte (type << 4 | MAGIC) + 2 bytes big-endian length
 MAGIC = 0xC
@@ -47,6 +54,7 @@ class Symbol:
     levels: np.ndarray         # (n_data, 3) channel levels of data modules in placement order
     blocks: BlockStructure
     payload_bytes: int         # bytes of user payload actually stored
+    core_complement: bool = True   # finder cores coloured C/M/Y (False: plain R/G/B finders)
 
     @property
     def size(self) -> int:
@@ -147,8 +155,9 @@ def _parse_container(buf: bytes) -> Tuple[Union[bytes, str], int]:
 
 
 def encode(data: Union[bytes, str], ec_level: str = "M", profile="rgb222",
-           version: Optional[int] = None, compress: bool = False) -> Symbol:
-    """Encode a payload into a CQR Symbol (module colour matrix)."""
+           version: Optional[int] = None, compress: bool = False, core_complement: bool = True) -> Symbol:
+    """Encode a payload into a CQR Symbol (module colour matrix).
+    core_complement: colour the finder cores cyan / magenta / yellow (see FINDER_CORE_COLORS)."""
     if ec_level not in EC_LEVELS:
         raise ValueError(f"ec_level must be one of {list(EC_LEVELS)}")
     profile = get_profile(profile)
@@ -191,13 +200,14 @@ def encode(data: Union[bytes, str], ec_level: str = "M", profile="rgb222",
     symbols = stream.reshape(n_mod, bpm).astype(np.int64) @ weights
     levels = profile.symbols_to_levels(symbols)
 
-    rgb = function_pattern_colors(version, ec_level, profile)
+    rgb = function_pattern_colors(version, ec_level, profile, core_complement)
     rows, cols = L.data_order[:, 0], L.data_order[:, 1]
     rgb[rows, cols] = profile.levels_to_rgb(levels)
-    return Symbol(version, ec_level, profile, rgb, levels, bs, n_payload)
+    return Symbol(version, ec_level, profile, rgb, levels, bs, n_payload, core_complement)
 
 
-def function_pattern_colors(version: int, ec_level: str, profile: ColorProfile) -> np.ndarray:
+def function_pattern_colors(version: int, ec_level: str, profile: ColorProfile,
+                            core_complement: bool = True) -> np.ndarray:
     """RGB matrix with all function patterns drawn and data modules left white."""
     L = layout.get_layout(version)
     size = L.size
@@ -208,6 +218,9 @@ def function_pattern_colors(version: int, ec_level: str, profile: ColorProfile) 
     rgb[kind == layout.K_DARK_MODULE] = BLACK
     for which, color in enumerate(FINDER_COLORS):
         rgb[L.finder_mask(which)] = color
+    if core_complement:
+        for which, color in enumerate(FINDER_CORE_COLORS):
+            rgb[L.finder_core_mask(which)] = color
 
     fmt = bch.encode_format(pack_format_payload(ec_level, profile))
     for copy in layout.format_bit_positions(size):

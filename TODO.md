@@ -17,6 +17,8 @@ Open ideas / next steps
 - [x] print a few symbols and photograph them with a phone (2026-10-04, print_test/photos/, results in
       research/04 "Real-world print test"): rgb111 decodes down to 0.51 mm modules and from a whole-page photo at
       9 px/module; rgb221 and denser fail on an inkjet print (printed colours 1.3-1.5 sigma apart, oracle 7-12 % errors)
+- [x] complementary C/M/Y finder cores as free secondary-colour references + palette init by inverting the
+      corner model (2026-10-04, research/03 section 9); page in print_test/cmy_cores/ still to be printed
 - [ ] print-specific palette (CMY-friendly) as an extra profile: 8 corners + intermediates chosen inside the printer
       gamut (orange / purple / teal ...) instead of a dense RGB lattice; needs a profile slot (gray4 is the least useful)
 - [ ] stored printer profile: a one-time calibration chart (all palette colours with known labels) measured once per

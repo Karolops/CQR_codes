@@ -100,3 +100,17 @@ if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):
             fn(); print("ok", name)
+
+
+def test_finder_core_colours():
+    from cqr import layout
+    from cqr.profiles import get_profile
+    L = layout.get_layout(3)
+    rgb = codec.function_pattern_colors(3, "M", get_profile("rgb111"))
+    assert (rgb[L.finder_core_mask(0)] == (0, 255, 255)).all()      # cyan core in the red finder
+    assert (rgb[L.finder_core_mask(1)] == (255, 0, 255)).all()
+    assert (rgb[L.finder_core_mask(2)] == (255, 255, 0)).all()
+    assert (rgb[L.finder_ring_mask(0)] == (255, 0, 0)).all()
+    assert L.finder_core_mask(0).sum() == 9 and L.finder_ring_mask(0).sum() == 24
+    plain = codec.function_pattern_colors(3, "M", get_profile("rgb111"), core_complement=False)
+    assert (plain[L.finder_core_mask(0)] == (255, 0, 0)).all()

@@ -1,0 +1,434 @@
+{
+  "A1": {
+    "payload": "CQR print test A1: profile mono, EC M, module",
+    "profile": "mono",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 12,
+    "module_mm": 1.016,
+    "quiet_zone": 2,
+    "bits_per_module": 1,
+    "payload_bytes": 45,
+    "bbox_px": [
+      309,
+      437,
+      705,
+      833
+    ],
+    "bbox_mm": [
+      26.2,
+      37.0,
+      59.7,
+      70.5
+    ]
+  },
+  "A2": {
+    "payload": "CQR print test A2: profile mono, EC M, module",
+    "profile": "mono",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 8,
+    "module_mm": 0.677,
+    "quiet_zone": 2,
+    "bits_per_module": 1,
+    "payload_bytes": 45,
+    "bbox_px": [
+      1107,
+      503,
+      1371,
+      767
+    ],
+    "bbox_mm": [
+      93.7,
+      42.6,
+      116.1,
+      64.9
+    ]
+  },
+  "A3": {
+    "payload": "CQR print test A3: profile mono, EC M, module",
+    "profile": "mono",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 6,
+    "module_mm": 0.508,
+    "quiet_zone": 2,
+    "bits_per_module": 1,
+    "payload_bytes": 45,
+    "bbox_px": [
+      1872,
+      536,
+      2070,
+      734
+    ],
+    "bbox_mm": [
+      158.5,
+      45.4,
+      175.3,
+      62.1
+    ]
+  },
+  "B1": {
+    "payload": "CQR print test B1: profile rgb111, EC M, module 1.02 mm. The quick brown fox jumps over the lazy dog. 0123456789 ",
+    "profile": "rgb111",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 12,
+    "module_mm": 1.016,
+    "quiet_zone": 2,
+    "bits_per_module": 3,
+    "payload_bytes": 113,
+    "bbox_px": [
+      309,
+      929,
+      705,
+      1325
+    ],
+    "bbox_mm": [
+      26.2,
+      78.7,
+      59.7,
+      112.2
+    ]
+  },
+  "B2": {
+    "payload": "CQR print test B2: profile rgb111, EC M, module 0.68 mm. The quick brown fox jumps over the lazy dog. 0123456789 ",
+    "profile": "rgb111",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 8,
+    "module_mm": 0.677,
+    "quiet_zone": 2,
+    "bits_per_module": 3,
+    "payload_bytes": 113,
+    "bbox_px": [
+      1107,
+      995,
+      1371,
+      1259
+    ],
+    "bbox_mm": [
+      93.7,
+      84.2,
+      116.1,
+      106.6
+    ]
+  },
+  "B3": {
+    "payload": "CQR print test B3: profile rgb111, EC M, module 0.51 mm. The quick brown fox jumps over the lazy dog. 0123456789 ",
+    "profile": "rgb111",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 6,
+    "module_mm": 0.508,
+    "quiet_zone": 2,
+    "bits_per_module": 3,
+    "payload_bytes": 113,
+    "bbox_px": [
+      1872,
+      1028,
+      2070,
+      1226
+    ],
+    "bbox_mm": [
+      158.5,
+      87.0,
+      175.3,
+      103.8
+    ]
+  },
+  "C1": {
+    "payload": "CQR print test C1: profile rgb221, EC M, module 1.02 mm. The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 ",
+    "profile": "rgb221",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 12,
+    "module_mm": 1.016,
+    "quiet_zone": 2,
+    "bits_per_module": 5,
+    "payload_bytes": 169,
+    "bbox_px": [
+      309,
+      1421,
+      705,
+      1817
+    ],
+    "bbox_mm": [
+      26.2,
+      120.3,
+      59.7,
+      153.8
+    ]
+  },
+  "C2": {
+    "payload": "CQR print test C2: profile rgb221, EC M, module 0.68 mm. The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 ",
+    "profile": "rgb221",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 8,
+    "module_mm": 0.677,
+    "quiet_zone": 2,
+    "bits_per_module": 5,
+    "payload_bytes": 169,
+    "bbox_px": [
+      1107,
+      1487,
+      1371,
+      1751
+    ],
+    "bbox_mm": [
+      93.7,
+      125.9,
+      116.1,
+      148.3
+    ]
+  },
+  "C3": {
+    "payload": "CQR print test C3: profile rgb221, EC M, module 0.51 mm. The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 ",
+    "profile": "rgb221",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 6,
+    "module_mm": 0.508,
+    "quiet_zone": 2,
+    "bits_per_module": 5,
+    "payload_bytes": 169,
+    "bbox_px": [
+      1872,
+      1520,
+      2070,
+      1718
+    ],
+    "bbox_mm": [
+      158.5,
+      128.7,
+      175.3,
+      145.5
+    ]
+  },
+  "D1": {
+    "payload": "CQR print test D1: profile rgb222, EC M, module 1.02 mm. The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 ",
+    "profile": "rgb222",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 12,
+    "module_mm": 1.016,
+    "quiet_zone": 2,
+    "bits_per_module": 6,
+    "payload_bytes": 225,
+    "bbox_px": [
+      309,
+      1913,
+      705,
+      2309
+    ],
+    "bbox_mm": [
+      26.2,
+      162.0,
+      59.7,
+      195.5
+    ]
+  },
+  "D2": {
+    "payload": "CQR print test D2: profile rgb222, EC M, module 0.68 mm. The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 ",
+    "profile": "rgb222",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 8,
+    "module_mm": 0.677,
+    "quiet_zone": 2,
+    "bits_per_module": 6,
+    "payload_bytes": 225,
+    "bbox_px": [
+      1107,
+      1979,
+      1371,
+      2243
+    ],
+    "bbox_mm": [
+      93.7,
+      167.6,
+      116.1,
+      189.9
+    ]
+  },
+  "D3": {
+    "payload": "CQR print test D3: profile rgb222, EC M, module 0.51 mm. The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 ",
+    "profile": "rgb222",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 6,
+    "module_mm": 0.508,
+    "quiet_zone": 2,
+    "bits_per_module": 6,
+    "payload_bytes": 225,
+    "bbox_px": [
+      1872,
+      2012,
+      2070,
+      2210
+    ],
+    "bbox_mm": [
+      158.5,
+      170.3,
+      175.3,
+      187.1
+    ]
+  },
+  "E1": {
+    "payload": "CQR print test E1: profile rgb332, EC M, module 1.02 mm. The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 ",
+    "profile": "rgb332",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 12,
+    "module_mm": 1.016,
+    "quiet_zone": 2,
+    "bits_per_module": 8,
+    "payload_bytes": 337,
+    "bbox_px": [
+      309,
+      2405,
+      705,
+      2801
+    ],
+    "bbox_mm": [
+      26.2,
+      203.6,
+      59.7,
+      237.2
+    ]
+  },
+  "E2": {
+    "payload": "CQR print test E2: profile rgb332, EC M, module 0.68 mm. The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 ",
+    "profile": "rgb332",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 8,
+    "module_mm": 0.677,
+    "quiet_zone": 2,
+    "bits_per_module": 8,
+    "payload_bytes": 337,
+    "bbox_px": [
+      1107,
+      2471,
+      1371,
+      2735
+    ],
+    "bbox_mm": [
+      93.7,
+      209.2,
+      116.1,
+      231.6
+    ]
+  },
+  "E3": {
+    "payload": "CQR print test E3: profile rgb332, EC M, module 0.51 mm. The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 ",
+    "profile": "rgb332",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 6,
+    "module_mm": 0.508,
+    "quiet_zone": 2,
+    "bits_per_module": 8,
+    "payload_bytes": 337,
+    "bbox_px": [
+      1872,
+      2504,
+      2070,
+      2702
+    ],
+    "bbox_mm": [
+      158.5,
+      212.0,
+      175.3,
+      228.8
+    ]
+  },
+  "F1": {
+    "payload": "CQR print test F1: profile rgb333, EC M, module 1.02 mm. The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 ",
+    "profile": "rgb333",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 12,
+    "module_mm": 1.016,
+    "quiet_zone": 2,
+    "bits_per_module": 9,
+    "payload_bytes": 393,
+    "bbox_px": [
+      309,
+      2897,
+      705,
+      3293
+    ],
+    "bbox_mm": [
+      26.2,
+      245.3,
+      59.7,
+      278.8
+    ]
+  },
+  "F2": {
+    "payload": "CQR print test F2: profile rgb333, EC M, module 0.68 mm. The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 ",
+    "profile": "rgb333",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 8,
+    "module_mm": 0.677,
+    "quiet_zone": 2,
+    "bits_per_module": 9,
+    "payload_bytes": 393,
+    "bbox_px": [
+      1107,
+      2963,
+      1371,
+      3227
+    ],
+    "bbox_mm": [
+      93.7,
+      250.9,
+      116.1,
+      273.2
+    ]
+  },
+  "F3": {
+    "payload": "CQR print test F3: profile rgb333, EC M, module 0.51 mm. The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 The quick brown fox jumps over the lazy dog. 0123456789 ",
+    "profile": "rgb333",
+    "ec": "M",
+    "version": 3,
+    "variant": "cmy",
+    "module_px_300dpi": 6,
+    "module_mm": 0.508,
+    "quiet_zone": 2,
+    "bits_per_module": 9,
+    "payload_bytes": 393,
+    "bbox_px": [
+      1872,
+      2996,
+      2070,
+      3194
+    ],
+    "bbox_mm": [
+      158.5,
+      253.7,
+      175.3,
+      270.4
+    ]
+  }
+}

@@ -87,6 +87,17 @@ class Layout:
         m[r0 - 3:r0 + 4, c0 - 3:c0 + 4] = sub == K_FINDER_DARK
         return m
 
+    def finder_core_mask(self, which: int) -> np.ndarray:
+        """Boolean mask of the 3x3 core of one finder pattern."""
+        r0, c0 = self.finder_centres[which]
+        m = np.zeros(self.kind.shape, dtype=bool)
+        m[r0 - 1:r0 + 2, c0 - 1:c0 + 2] = True
+        return m
+
+    def finder_ring_mask(self, which: int) -> np.ndarray:
+        """Boolean mask of the outer 7x7 ring (dark modules without the core) of one finder."""
+        return self.finder_mask(which) & ~self.finder_core_mask(which)
+
 
 def _draw_finder(kind: np.ndarray, r0: int, c0: int) -> None:
     """Draw a 7x7 finder with top-left corner (r0, c0) plus its separator."""

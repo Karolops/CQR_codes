@@ -290,3 +290,60 @@ format copy would break the QR structure for 1-4 % gain.
   the next step.
 * **Structured append** across several symbols and ECI charset flags: the
   container has a 4-bit type field with room for both.
+
+## 9. Complementary finder cores (after the first real print, 2026-10-04)
+
+The print test (research/04) showed that the three R/G/B finders are good
+orientation marks and good references for the camera primaries, but a poor colour
+calibration for print: a printer mixes C, M, Y inks subtractively, so cyan, magenta
+and yellow cannot be predicted from red, green, blue, white and black (on the
+Brother inkjet the additive prediction of cyan was off by 50 units of green, of
+magenta by 70 units of blue). The decoder had to recover those three corners from
+the data cloud, which works for 8 colours and fails for 32 or more.
+
+**Decision: colour the 3x3 core of each finder with the complement of its ring** -
+cyan inside red, magenta inside green, yellow inside blue (`codec.FINDER_CORE_COLORS`,
+default on; `encode(core_complement=False)` / `--plain-finders` gives the old look).
+
+* Zero capacity cost and no geometry change: the 1:1:3:1:1 profile is intact on the
+  min-channel darkness image, because every complementary core has one channel near
+  zero (printed cyan 4, yellow 12, magenta 50 of 255).
+* All eight corners of the colour cube become *measured* references. The palette
+  model is initialised as the exact Neugebauer (multilinear) interpolation of those
+  eight colours; the data modules are then mapped back into palette coordinates by
+  inverting that model (batched Gauss-Newton), where the axes are separable again,
+  and the level positions (tone curves, i.e. gamma and dot gain) are estimated axis
+  by axis with the proven 1-D quantile k-means. Only then does the EM start.
+* Backwards compatible: `decoder.detect_core_complement` compares each core with
+  its ring and falls back to the data-cloud extremes for plain finders; the old
+  photos still decode.
+* Why not CMY finders instead of RGB: finders must be dark for locators; yellow has a
+  luminance of ~0.89 of white and cyan ~0.70, and yellow is defined only by the blue
+  channel that phones sample at half resolution. Red, green and blue stay the finder
+  colours, the secondaries ride inside.
+
+Simulated subtractive print (trilinear mixing of the eight colours measured on the
+real B1 photo, dot-gain exponent 1.6, then the camera simulator; V3, EC M, 4 seeds):
+
+| camera | profile | plain finders | C/M/Y cores |
+|---|---|---|---|
+| good (12 px/module) | rgb221 | 0/4 decoded | 4/4, 0.0 % module errors |
+| good | rgb222 | 4/4, 1.9 % | 4/4, 0.0 % |
+| phone (8 px/module) | rgb221 | 2/4, 4.4 % | 4/4, 0.1 % |
+| phone | rgb222 | 4/4, 2.7 % | 4/4, 1.0 % |
+
+Before the new initialisation both variants failed every rgb221/rgb222 case of this
+simulation (31-37 % module errors) although the oracle error was 0 %: a capacity
+check (fit from the true labels) gave 0 % too, so it was purely an initialisation
+problem of the EM. The inversion step is what fixed it; the measured cores remove
+the remaining dependence on the noisy data-cloud extremes.
+
+On the real plain-finder photos the new initialisation alone lowered the rgb221 /
+rgb222 close-up errors from 28 % / 40 % to 20 % / 20 % (oracle 12 % / 7 %) and made
+C1 (rgb221, 1.02 mm) decode from the whole-page photo. The page with complementary
+cores (`print_test/cmy_cores/`) has not been printed yet.
+
+A related bug found on the way: the erasure strategy of `ecc.rs_decode` tried up to
+E-1 erasures, where a single check symbol remains and reedsolo accepts random input
+in ~40-60 % of cases (measured). Erasures are now capped at 3E/4 (0 false accepts in
+150 random trials for all four symbol sizes).
