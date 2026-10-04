@@ -279,3 +279,38 @@ see research/03 section 9) changed the results on the *same plain-finder photos*
 Whole page: 6/18 (A1-A3, B1, B2, C1). A page with cyan / magenta / yellow finder
 cores is in `print_test/cmy_cores/` (decode with
 `python tests/decode_photo.py photo.jpg --all --manifest print_test/cmy_cores/manifest.json`).
+
+### Page with complementary finder cores, photographed (2026-10-04, `print_test/cmy_cores/photos/`)
+
+Same printer, same phone, whole page only (2638 x 3946 px, 14 / 9 / 7 px per module).
+Decoded: A1-A3, B1, B2 (5/18), the same set as the plain page; C1 failed here although it
+decoded from the first page photo. The reason is the photo, not the cores: the residual
+noise is 15-25 % higher on every symbol of the second photo (slightly darker, bluish
+light), which moves the rgb221 oracle from 5.8 % to 7.6 % module errors - and EC M
+decodes rgb221 only up to about 8 %. Within the same photo the cores help clearly
+(palette-model errors with / without using the cores; "oracle" = true colour means):
+
+| symbol | profile | px/module | oracle | with cores | cores ignored |
+|---|---|---|---|---|---|
+| B2 | rgb111 | 8.9 | 2.3 % | 1.9 % (decodes) | 2.8 % (decodes) |
+| B3 | rgb111 | 7.1 | 13.1 % | 15.9 % | 16.6 % |
+| C1 | rgb221 | 14.1 | 7.6 % | 13.1 % | 21.3 % |
+| C2 | rgb221 | 9.1 | 16.2 % | 28.0 % | 30.7 % |
+| D1 | rgb222 | 14.2 | 17.3 % | 35.1 % | 32.1 % |
+| E1 | rgb332 | 14.1 | 28.6 % | 74.1 % | 82.0 % |
+
+For comparison, the first (plain-finder) page photo: C1 oracle 5.8 %, palette 9.3 % /
+8.5 % with the 2x2 sampling window, which is why it decoded there.
+
+A free per-colour lattice refinement after the EM (means shrunk towards the model) was
+tried as a further stage: C1 13.1 -> 10.4 %, C2 28 -> 25 %, no symbol flipped to
+decodable. Not adopted.
+
+Conclusions: (1) the cores do what they were meant to do - they remove most of the gap
+between the data-only initialisation and the model (C1: 21 -> 13 %); (2) rgb221 at
+1.02 mm on plain paper sits exactly on the EC M limit (oracle 6-8 % vs ~8 % tolerable):
+it decodes from a good photo and fails from a slightly worse one; (3) rgb222 and denser
+are out of reach on this paper (oracle 17 % and up) whatever the decoder does. The
+levers left are physical: photo/glossy paper, larger modules (1.5-2 mm) for rgb221, more
+light and a closer photo (at 28 px/module the close-ups had 40 % less noise than the page
+photos), or EC Q for the 5-bit profile.

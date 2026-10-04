@@ -1,7 +1,7 @@
 # CQR project context (read first)
 
 Last session: 2026-10-04 (second session: first real-world print test, then complementary
-C/M/Y finder cores + new palette initialisation; the cmy_cores page is NOT printed yet). Private repo:
+C/M/Y finder cores + new palette initialisation; cmy_cores page printed and photographed once). Private repo:
 https://github.com/Karolops/CQR_codes (branch `main`, pushed over HTTPS with the GitHub login
 stored in Git Credential Manager, user `Karolops`; GitHub CLI `gh` is NOT installed - the
 repo was created with the REST API).
@@ -97,18 +97,19 @@ with uncorrectable blocks raise ValueError (never returned).
   (rgb221, rgb222) vs oracle 12 % / 7 %.
 - **Complementary finder cores** (research/03 section 9): on a simulated subtractive print
   built from the measured palette, rgb221/rgb222 go from 0-2 of 4 decoded (plain) to 4/4
-  with 0-1 % module errors (C/M/Y cores). The test page `print_test/cmy_cores/` is waiting
-  to be printed and photographed (`decode_photo.py ... --manifest print_test/cmy_cores/manifest.json`).
+  with 0-1 % module errors (C/M/Y cores). Real cmy_cores page photo (`print_test/cmy_cores/
+  photos/`): 5/18 like the plain page (noisier photo); within the photo the cores cut the
+  rgb221 C1 palette error from 21 % to 13 % (oracle 7.6 %). rgb221 at 1.02 mm sits on the
+  EC M limit; rgb222+ need better paper / bigger modules (research/04, last section).
 - Measured printed rgb111 palette (camera RGB, B1): K 25,25,27 R 190,61,79 G 24,128,46
   B 29,70,132 C 4,124,171 M 181,50,114 Y 206,172,12 W 193,192,190 - secondaries are far
   from additive (that is why the affine calibration misread 100 % of cyan / magenta).
 
 ## Next steps
 
-1. Print `print_test/cmy_cores/cqr_print_test_A4.pdf` (100 % scale), photograph the page and
-   close-ups, decode with `--manifest print_test/cmy_cores/manifest.json`, compare with the
-   plain page (expect rgb221 to become reliable at 1.02 mm; rgb222 is the open question).
-   Also try photo/glossy paper and the driver's plain-sRGB mode.
+1. Close-up photos of C1/C2 on the cmy_cores page in good light (decode with
+   `--manifest print_test/cmy_cores/manifest.json --id C1`); then photo/glossy paper and the
+   driver's plain-sRGB mode; rgb221 with 1.5-2 mm modules or EC Q.
 2. Print-specific palette profile (8 corners + gamut-aware intermediates) and/or a stored
    printer calibration profile (chart with known labels) to get 6+ bits/module in print.
 3. More photos: rgb111 at 0.68 / 0.51 mm from normal phone distance; rgb221 at 1.5-2 mm
