@@ -46,9 +46,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-import cv2
 import numpy as np
 from PIL import Image
+
+try:
+    import cv2
+except ImportError:  # e.g. Pyodide in the browser: numpy fallbacks below are used
+    cv2 = None
 
 from . import codec, layout, palette
 
@@ -367,12 +371,35 @@ def _fit_h(src: np.ndarray, dst: np.ndarray) -> np.ndarray:
     src = np.asarray(src, dtype=np.float64)
     dst = np.asarray(dst, dtype=np.float64)
     if len(src) == 3:
-        A = cv2.getAffineTransform(src.astype(np.float32), dst.astype(np.float32))
+        A = np.concatenate([src, np.ones((3, 1))], axis=1)
+        M, *_ = np.linalg.lstsq(A, dst, rcond=None)          # exact affine through 3 points
         H = np.eye(3)
-        H[:2, :] = A
+        H[:2, :] = M.T
         return H
-    H, _ = cv2.findHomography(src.astype(np.float64), dst.astype(np.float64), 0)
-    return H
+    if cv2 is not None:
+        H, _ = cv2.findHomography(src.astype(np.float64), dst.astype(np.float64), 0)
+        return H
+    return _dlt_homography(src, dst)
+
+
+def _dlt_homography(src: np.ndarray, dst: np.ndarray) -> np.ndarray:
+    """Least-squares homography (normalised direct linear transform)."""
+    def normalise(p):
+        c = p.mean(axis=0)
+        s = np.sqrt(2.0) / max(np.mean(np.linalg.norm(p - c, axis=1)), 1e-9)
+        T = np.array([[s, 0, -s * c[0]], [0, s, -s * c[1]], [0, 0, 1.0]])
+        q = np.concatenate([p, np.ones((len(p), 1))], axis=1) @ T.T
+        return q, T
+    s_n, Ts = normalise(src)
+    d_n, Td = normalise(dst)
+    rows = []
+    for (x, y, _), (u, v, _) in zip(s_n, d_n):
+        rows.append([0, 0, 0, -x, -y, -1, v * x, v * y, v])
+        rows.append([x, y, 1, 0, 0, 0, -u * x, -u * y, -u])
+    _, _, vt = np.linalg.svd(np.array(rows))
+    Hn = vt[-1].reshape(3, 3)
+    H = np.linalg.inv(Td) @ Hn @ Ts
+    return H / H[2, 2]
 
 
 def _sample(img: np.ndarray, H: np.ndarray, module_xy: np.ndarray, sub: int = 3, spread: float = 0.5) -> np.ndarray:
@@ -391,6 +418,15 @@ def _sample(img: np.ndarray, H: np.ndarray, module_xy: np.ndarray, sub: int = 3,
 def _sample_points(img: np.ndarray, ipts: np.ndarray) -> np.ndarray:
     """Bilinear samples of img at image coordinates (n,2) -> (n,3)."""
     ipts = np.asarray(ipts, dtype=np.float32)
+    if cv2 is None:
+        h, w = img.shape[:2]
+        x = np.clip(ipts[:, 0], 0, w - 1)
+        y = np.clip(ipts[:, 1], 0, h - 1)
+        x0 = np.floor(x).astype(np.int64); y0 = np.floor(y).astype(np.int64)
+        x1 = np.minimum(x0 + 1, w - 1); y1 = np.minimum(y0 + 1, h - 1)
+        fx = (x - x0)[:, None]; fy = (y - y0)[:, None]
+        return (img[y0, x0] * (1 - fx) * (1 - fy) + img[y0, x1] * fx * (1 - fy)
+                + img[y1, x0] * (1 - fx) * fy + img[y1, x1] * fx * fy)
     total = len(ipts)
     cols = int(np.ceil(np.sqrt(total)))
     rows = int(np.ceil(total / cols))

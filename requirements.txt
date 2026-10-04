@@ -1,6 +1,6 @@
 numpy>=1.24
 pillow>=9.0
-opencv-python>=4.5
+opencv-python>=4.5   # optional: faster sampling; numpy fallbacks are used without it
 reedsolo>=1.6
 # tests only
 pytest

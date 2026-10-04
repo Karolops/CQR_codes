@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CQR coloured QR demo</title>
+<meta name="description" content="Encode and decode coloured QR codes (CQR) in the browser. The real Python encoder and decoder run locally via Pyodide; nothing is uploaded.">
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1c1f24; --muted: #5d6470; --line: #e1e4ea;
+    --accent: #2456d6; --ok: #1d8a4b; --bad: #c0392b; --chip: #eef1f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14161a; --panel: #1d2026; --ink: #e8eaee; --muted: #9aa3b2; --line: #2d323b;
+            --accent: #7fa4ff; --ok: #4ccb7f; --bad: #ff7b6b; --chip: #262b34; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 28px 16px 8px; max-width: 1100px; margin: 0 auto; }
+  h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: .2px; }
+  h1 span { display: inline-block; width: .55em; height: .55em; border-radius: 2px; margin-right: 2px; }
+  header p { margin: 4px 0; color: var(--muted); }
+  a { color: var(--accent); }
+  main { max-width: 1100px; margin: 0 auto; padding: 8px 16px 48px; display: grid; gap: 18px; grid-template-columns: 1fr; }
+  @media (min-width: 880px) { main { grid-template-columns: 1fr 1fr; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  section h2 { margin: 0 0 12px; font-size: 18px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  textarea, select, input[type=number], input[type=file] { width: 100%; font: inherit; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  textarea { min-height: 84px; resize: vertical; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  button { font: inherit; font-weight: 600; color: #fff; background: var(--accent); border: 0; border-radius: 8px; padding: 10px 16px;
+    margin-top: 14px; cursor: pointer; }
+  button.secondary { background: var(--chip); color: var(--ink); }
+  button:disabled { opacity: .5; cursor: default; }
+  .status { padding: 10px 14px; border-radius: 8px; background: var(--chip); color: var(--muted); font-size: 14px; margin: 0 16px 10px; max-width: 1068px; }
+  .status.ready { color: var(--ok); }
+  .status.error { color: var(--bad); }
+  @media (min-width: 1100px) { .status { margin: 0 auto 10px; } }
+  .out { margin-top: 14px; }
+  .out img { max-width: 100%; image-rendering: pixelated; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  .caption { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .result { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+  .result .head { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; font-size: 14px; }
+  .chip { background: var(--chip); border-radius: 6px; padding: 1px 8px; font-size: 12px; color: var(--muted); }
+  .ok { color: var(--ok); font-weight: 600; } .bad { color: var(--bad); font-weight: 600; }
+  .text { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, Consolas, monospace; font-size: 13px; margin-top: 6px; }
+  .samples { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .samples button { margin-top: 0; padding: 6px 10px; font-weight: 500; }
+  .preview { max-width: 100%; max-height: 260px; border-radius: 8px; border: 1px solid var(--line); margin-top: 10px; display: none; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 8px; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; }
+  footer { max-width: 1100px; margin: 0 auto; padding: 0 16px 40px; color: var(--muted); font-size: 13px; }
+  .wide { grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span style="background:#e3342f"></span><span style="background:#2ecc40"></span><span style="background:#2962ff"></span> CQR, the coloured QR code</h1>
+  <p>Standard QR geometry, several bits per module in colour. The red, green and blue finders carry cyan, magenta and yellow cores, so all eight corners of the colour cube are measured references.</p>
+  <p>This page runs the project's real Python encoder and decoder in your browser (Pyodide). Images never leave your device. <a href="https://github.com/Karolops/CQR_codes" rel="noopener">Source and research notes on GitHub</a>.</p>
+</header>
+<div id="status" class="status">Loading the Python runtime (about 15 MB, once)…</div>
+<main>
+  <section>
+    <h2>Encode</h2>
+    <label for="text">Payload (UTF-8 text)</label>
+    <textarea id="text">CQR demo: the same 29x29 grid as a QR code, but 3 to 12 bits per module. 0123456789</textarea>
+    <div class="row">
+      <div>
+        <label for="profile">Colour profile</label>
+        <select id="profile">
+          <option value="mono">mono, 1 bit/module (QR-like)</option>
+          <option value="gray4">gray4, 2 bits, 4 greys</option>
+          <option value="rgb111" selected>rgb111, 3 bits, 8 colours (print + phone)</option>
+          <option value="rgb221">rgb221, 5 bits, 32 colours (good print)</option>
+          <option value="rgb222">rgb222, 6 bits, 64 colours (screen / scanner)</option>
+          <option value="rgb332">rgb332, 8 bits, 256 colours (screen)</option>
+          <option value="rgb333">rgb333, 9 bits, 512 colours (screen)</option>
+          <option value="rgb444">rgb444, 12 bits, 4096 colours (digital)</option>
+        </select>
+      </div>
+      <div>
+        <label for="ec">Error correction</label>
+        <select id="ec">
+          <option value="L">L, 7 % parity</option>
+          <option value="M" selected>M, 15 %</option>
+          <option value="Q">Q, 25 %</option>
+          <option value="H">H, 30 %</option>
+        </select>
+      </div>
+    </div>
+    <div class="row3">
+      <div><label for="scale">Pixels per module</label><input id="scale" type="number" min="2" max="40" value="12"></div>
+      <div><label for="quiet">Quiet zone (modules)</label><input id="quiet" type="number" min="0" max="8" value="4"></div>
+      <div><label for="cores">Finder cores</label>
+        <select id="cores"><option value="cmy" selected>cyan / magenta / yellow</option><option value="plain">plain (old look)</option></select></div>
+    </div>
+    <button id="encodeBtn" disabled>Encode</button>
+    <button id="roundtripBtn" class="secondary" disabled>Decode this image</button>
+    <div class="out" id="encOut"></div>
+  </section>
+
+  <section>
+    <h2>Decode a photo or image</h2>
+    <label for="file">Image file (a photo of a printed symbol, a screenshot, or an encoded PNG)</label>
+    <input id="file" type="file" accept="image/*" capture="environment">
+    <div class="samples">
+      <button class="secondary" data-sample="examples/CQR_B1.jpg">Sample: printed rgb111, 1.02 mm modules</button>
+      <button class="secondary" data-sample="examples/CQR_B3.jpg">Sample: printed rgb111, 0.51 mm modules</button>
+    </div>
+    <label for="maxside">Downscale long side to (px). Larger is slower; small symbols need more.</label>
+    <select id="maxside">
+      <option value="1200">1200</option>
+      <option value="1600" selected>1600</option>
+      <option value="2500">2500</option>
+      <option value="100000">no downscaling</option>
+    </select>
+    <img id="preview" class="preview" alt="">
+    <button id="decodeBtn" disabled>Decode</button>
+    <div class="out" id="decOut"></div>
+  </section>
+
+  <section class="wide">
+    <h2>What to expect</h2>
+    <p style="margin:0 0 6px">Payload of a 29x29 symbol (version 3) at error-correction level M, compared with a standard QR code of the same size (42 bytes in byte mode), and where each profile has been shown to work:</p>
+    <table>
+      <tr><th>profile</th><th>bits/module</th><th>payload</th><th>vs QR</th><th>works on</th></tr>
+      <tr><td>mono</td><td>1</td><td>45 B</td><td>1.1x</td><td>everything</td></tr>
+      <tr><td>rgb111</td><td>3</td><td>145 B</td><td>3.5x</td><td>inkjet print on plain paper, phone photo, modules down to 0.5 mm (measured)</td></tr>
+      <tr><td>rgb221</td><td>5</td><td>243 B</td><td>5.8x</td><td>print at 1 mm modules with a good photo (on the edge)</td></tr>
+      <tr><td>rgb222</td><td>6</td><td>294 B</td><td>7x</td><td>screens, scanners</td></tr>
+      <tr><td>rgb332</td><td>8</td><td>390 B</td><td>9.3x</td><td>screen photographed by a phone (simulated)</td></tr>
+      <tr><td>rgb444</td><td>12</td><td>589 B</td><td>14x</td><td>screen to camera, scanner (simulated)</td></tr>
+    </table>
+    <p class="caption">Capacity grows with the logarithm of the number of colours, and a printer's gamut compression plus camera noise limit how many colours stay distinguishable. Details in the research notes in the repository.</p>
+  </section>
+</main>
+<footer>Decoding a photo takes a few seconds in the browser. The decoder finds every symbol in the image, so a photo of a whole test page works too (use "no downscaling" for small symbols).</footer>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

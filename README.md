@@ -3,9 +3,14 @@
 CQR is a 2-D barcode that keeps the **exact geometry of an ISO/IEC 18004 QR code**
 (finder, timing, alignment, format and version patterns, zig-zag data placement)
 but stores several bits per module in the module's **colour**.  The three finder
-patterns are coloured **red (top-left), green (top-right) and blue (bottom-left)**:
-they serve as the colour calibration references and, as a bonus, resolve the
-symbol's orientation (and mirroring) without any geometric reasoning.
+patterns are coloured **red (top-left), green (top-right) and blue (bottom-left)**
+with **cyan, magenta and yellow cores**: together with the black and white function
+modules they put all eight corners of the colour cube into every symbol as measured
+calibration references and, as a bonus, resolve the symbol's orientation (and
+mirroring) without any geometric reasoning.
+
+**Live demo**, the real encoder and decoder running in the browser (Pyodide, nothing is
+uploaded): https://karolops.github.io/CQR_codes/
 
 Colour resolution is a parameter: a *colour profile* fixes how many levels each of
 the R, G and B channels carries.
@@ -14,8 +19,8 @@ the R, G and B channels carries.
 |----------|---------|-------------|--------------------------------------------------|
 | `mono`   | 2       | 1           | black/white baseline (QR-like density)           |
 | `gray4`  | 4       | 2           | grey levels, for monochrome printers             |
-| `rgb111` | 8       | 3           | **default** - printed media + phone cameras      |
-| `rgb221` | 32      | 5           | good print / scanner (blue gets fewer levels)    |
+| `rgb111` | 8       | 3           | **default** - printed media + phone cameras (proven in print) |
+| `rgb221` | 32      | 5           | good print / scanner (blue gets fewer levels); on the edge in print |
 | `rgb222` | 64      | 6           | screen-to-camera, flatbed scanners               |
 | `rgb332` | 256     | 8           | screen / file transfer                           |
 | `rgb333` | 512     | 9           | screen / file transfer                           |
@@ -30,11 +35,12 @@ printed area of small symbols by about a third.
 
 ## Install / run
 
-Python 3.10+, `numpy`, `pillow`, `opencv-python`, `reedsolo` (tests also use
-`pytest` and `segno`, which is used only to cross-validate the layout).
+Python 3.10+, `numpy`, `pillow`, `reedsolo`; `opencv-python` is optional (faster
+sampling, otherwise numpy fallbacks are used, which is how the browser demo runs).  Tests
+also use `pytest` and `segno` (only to cross-validate the layout).
 
 ```
-pip install numpy pillow opencv-python reedsolo
+pip install numpy pillow reedsolo opencv-python
 python -m cqr encode "Hello, colour!" -o hello.png            # rgb111, EC M, smallest version
 python -m cqr encode -f archive.zip -p rgb222 -e L -o big.png -z
 python -m cqr decode hello.png --report
@@ -62,25 +68,32 @@ cqr/profiles.py   colour profiles, Gray-coded levels, format payload packing
 cqr/ecc.py        Reed-Solomon block structure, interleaving, whitening
 cqr/codec.py      payload container, encode -> module colours, decode from module levels
 cqr/render.py     Symbol -> PNG/JPEG
-cqr/decoder.py    image -> payload (detection, geometry, calibration, classification)
+cqr/palette.py    colour model of one captured symbol (printer mixing), fitted by EM
+cqr/decoder.py    image -> payload (detection, geometry, calibration, classification); decode_all()
 cqr/simulate.py   camera / print simulator used by the tests
 cqr/__main__.py   command line interface
-tests/            pytest suite, segno cross-check, diagnostics, evaluation
+tests/            pytest suite, segno cross-check, diagnostics, evaluation, print page, photo decoding
 research/         01 prior art, 02 QR structure reference, 03 design decisions, 04 evaluation
 examples/         sample symbols
+print_test/       A4 test pages (plain finders and cmy_cores/), manifests, phone photos
+web/              browser demo (Pyodide), published by .github/workflows/pages.yml
 ```
 
-Run the tests with `python -m pytest tests -q` (about 40 s) and the full robustness
-evaluation with `python tests/evaluate.py` (writes `research/04_evaluation_results.md`).
+Run the tests with `python -m pytest tests -q` (48 tests, about 2 min) and the full
+robustness evaluation with `python tests/evaluate.py` (writes `research/04_evaluation_results.md`).
+Photos of the printed test pages: `python tests/decode_photo.py photo.jpg --all` (every
+symbol in the image) or `--id B1` (one symbol, compared with the manifest).
 
 ## Symbol format in one page
 
 * **Geometry**: identical to QR version 1..40 (21..177 modules, 4-module white quiet zone).
-* **Finder patterns**: dark modules of the top-left / top-right / bottom-left finder are
-  pure red / green / blue, light modules white.  Separators white.
+* **Finder patterns**: the 7x7 ring of the top-left / top-right / bottom-left finder is
+  pure red / green / blue, the 3x3 core the complementary cyan / magenta / yellow, light
+  modules white.  Separators white.  (`encode(core_complement=False)` or `--plain-finders`
+  gives plain red / green / blue finders; the decoder detects both variants.)
 * **Timing, alignment, dark module, format and version modules**: black and white exactly as
-  in QR.  Together with the finders they provide the five calibration references
-  red, green, blue, white, black, spread over the whole symbol.
+  in QR.  Together with the finders they provide the eight calibration references
+  black, white, red, green, blue, cyan, magenta, yellow, spread over the whole symbol.
 * **Format information** (15 bits, BCH(15,5), masked with 0x5412, both copies at the QR
   positions, black/white): 5 payload bits = 2 bits EC level (QR encoding L=01, M=00, Q=11,
   H=10) + 3 bits colour profile index (table above, `mono`=6, `gray4`=7).
@@ -111,13 +124,36 @@ evaluation with `python tests/evaluate.py` (writes `research/04_evaluation_resul
    candidate versions scored by timing-pattern agreement and confirmed by the version bits;
 3. grid fitting: affine from the three finders, then alignment patterns located one by one
    with a 5x5 template search and the homography refitted after each hit;
-4. module sampling over a small central sub-grid; shading correction from the known
-   white/black modules (polynomial fields); 3x3 affine colour calibration from the
-   R/G/B/white/black references; neighbour interference cancellation;
-5. per-channel k-means level classification seeded at the ideal levels, confidence per
-   module; RS decoding with erasures on the least confident bytes when needed.
+4. module sampling over a small central sub-grid (retried with a tighter window if
+   decoding fails); shading correction from the known white/black modules (polynomial
+   fields); a 3x3 affine colour calibration for reading the format bits;
+5. colour model of this symbol (`cqr/palette.py`): Neugebauer interpolation of the eight
+   measured corner colours, inverted per module to estimate the tone curves axis by axis,
+   then expectation-maximisation with a tensor-product polynomial model, neighbour
+   interference cancellation and a Mahalanobis nearest-colour classifier (printers mix
+   subtractively: the secondaries are far from the sum of the primaries, which is why a
+   per-channel calibration fails on real prints); confidence per module; RS decoding with
+   erasures on the least confident symbols (at most 3/4 of the parity).
 
-## Measured robustness (simulated capture, `tests/evaluate.py`, 5 seeds per cell)
+## Real-world print test (inkjet, plain paper, phone camera)
+
+Test pages with 18 symbols each (V3, EC M; profiles mono to rgb333; modules 1.02, 0.68,
+0.51 mm) were printed on a Brother CMY inkjet and photographed with a phone.  Results
+(details and the measured printed palette in `research/04_evaluation_results.md`):
+
+| profile | bits/module | gain vs QR | result |
+|---|---|---|---|
+| mono | 1 | 1.1x | decodes everywhere, down to 6 px/module in a whole-page photo |
+| rgb111 | 3 | **3.5x** | 0 module errors on close-ups at 1.02 and 0.51 mm; decodes from a page photo at 9 px/module |
+| rgb221 | 5 | 5.8x | on the edge: decodes from a good page photo at 1.02 mm (8 % module errors), not from a noisier one |
+| rgb222 and denser | 6+ | | not decodable on plain paper: printed colours 1.3 sigma apart, even an oracle classifier has 17 % errors |
+
+Capacity grows with the logarithm of the number of colours and the printer's gamut
+compression plus camera noise set how many colours remain distinguishable, so 3 bits per
+module is the robust print density and 5 the achievable one; the denser profiles are for
+screens and scanners.
+
+## Measured robustness (simulated capture, `tests/evaluate.py`)
 
 Highest-density profile that decoded 100 % of symbols per capture preset (net payload
 bits per module after header and parity, gain relative to the `mono` profile at level L):
@@ -125,13 +161,13 @@ bits per module after header and parity, gain relative to the `mono` profile at 
 | preset | conditions | best profile | net bits/module | gain |
 |---|---|---|---|---|
 | screen | 8 px/module, slight tilt, JPEG 90 | rgb444 / L | 8.47 | 12.5x |
-| scanner | 6 px/module, mild cast, cross-talk 6 % | rgb444 / M | 6.89 | 10.1x |
+| scanner | 6 px/module, mild cast, cross-talk 6 % | rgb444 / L | 8.47 | 12.5x |
 | phone-good | 6 px/module, tilt, blur, cast, JPEG 85 | rgb332 / L | 5.60 | 8.2x |
-| phone-poor | 4.5 px/module, strong tilt/blur/noise/cast, JPEG 70 | rgb111 / Q | 1.19 | 1.8x |
+| phone-poor | 4.5 px/module, strong tilt/blur/noise/cast, JPEG 70 | rgb111 / L | 2.08 | 3.1x |
 
-`rgb111` (8 colours) decoded every "phone-good" symbol at all EC levels and the
-"phone-poor" ones at Q and H; `rgb222` (64 colours) needs phone-good or better.
-These are simulation results; printer gamut and real camera pipelines are not modelled.
+`rgb111` (8 colours) decodes every "phone-good" and "phone-poor" symbol at all EC levels;
+`rgb222` (64 colours) needs phone-good or better.  These are simulation results; printer
+gamut is not modelled there (see the real-world section above).
 
 See `research/03_design_decisions.md` for why these choices were made and
 `research/04_evaluation_results.md` for the full table.
