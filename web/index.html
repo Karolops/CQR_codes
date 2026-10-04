@@ -48,6 +48,9 @@
   .ok { color: var(--ok); font-weight: 600; } .bad { color: var(--bad); font-weight: 600; }
   .text { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, Consolas, monospace; font-size: 13px; margin-top: 6px; }
   .samples { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .camrow { display: flex; gap: 8px; flex-wrap: wrap; }
+  .camrow button { margin-top: 4px; }
+  .video { width: 100%; max-height: 60vh; border-radius: 8px; border: 1px solid var(--line); background: #000; margin-top: 10px; }
   .samples button { margin-top: 0; padding: 6px 10px; font-weight: 500; }
   .preview { max-width: 100%; max-height: 260px; border-radius: 8px; border: 1px solid var(--line); margin-top: 10px; display: none; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 8px; }
@@ -106,7 +109,14 @@
 
   <section>
     <h2>Decode a photo or image</h2>
-    <label for="file">Image file (a photo of a printed symbol, a screenshot, or an encoded PNG)</label>
+    <div class="camrow">
+      <button id="camBtn" class="secondary">Use camera</button>
+      <button id="captureBtn" style="display:none">Capture and decode</button>
+      <button id="camStopBtn" class="secondary" style="display:none">Close camera</button>
+    </div>
+    <video id="video" class="video" autoplay playsinline muted style="display:none"></video>
+    <div id="camHint" class="caption" style="display:none">Fill the frame with the symbol, hold still, then capture. Each capture is decoded at the camera's full photo resolution where the browser allows it.</div>
+    <label for="file">… or an image file (a photo of a printed symbol, a screenshot, or an encoded PNG)</label>
     <input id="file" type="file" accept="image/*" capture="environment">
     <div class="samples">
       <button class="secondary" data-sample="examples/CQR_B1.jpg">Sample: printed rgb111, 1.02 mm modules</button>

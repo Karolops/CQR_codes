@@ -48,6 +48,7 @@ const status = $("status");
 let pyodide = null;
 let lastPng = null;       // data URL of the last encoded symbol
 let pendingFile = null;   // File or Blob chosen for decoding
+let stream = null;        // active camera stream
 
 function setStatus(text, cls) {
   status.textContent = text;
@@ -203,3 +204,80 @@ for (const b of document.querySelectorAll("[data-sample]")) {
 }
 
 init();
+
+
+/* ---- camera -------------------------------------------------------------- */
+async function startCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    $("decOut").innerHTML = `<div class="bad">This browser does not offer camera access here (it needs HTTPS and a camera). Use the file picker instead.</div>`;
+    return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1440 } },
+      audio: false,
+    });
+  } catch (e) {
+    $("decOut").innerHTML = `<div class="bad">Camera not available: ${escapeHtml(e.message || e)}. Use the file picker instead.</div>`;
+    return;
+  }
+  const video = $("video");
+  video.srcObject = stream;
+  video.style.display = "block";
+  $("camHint").style.display = "block";
+  $("camBtn").style.display = "none";
+  $("captureBtn").style.display = "";
+  $("camStopBtn").style.display = "";
+  $("preview").style.display = "none";
+}
+
+function stopCamera() {
+  if (stream) {
+    for (const t of stream.getTracks()) t.stop();
+    stream = null;
+  }
+  const video = $("video");
+  video.srcObject = null;
+  video.style.display = "none";
+  $("camHint").style.display = "none";
+  $("camBtn").style.display = "";
+  $("captureBtn").style.display = "none";
+  $("camStopBtn").style.display = "none";
+}
+
+async function captureFrame() {
+  if (!stream) return null;
+  const track = stream.getVideoTracks()[0];
+  // Full-resolution still where ImageCapture exists (Android Chrome); video frame otherwise.
+  if (window.ImageCapture) {
+    try {
+      const blob = await new ImageCapture(track).takePhoto();
+      if (blob && blob.size > 0) return blob;
+    } catch (e) {
+      console.warn("takePhoto failed, falling back to a video frame", e);
+    }
+  }
+  const video = $("video");
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
+}
+
+$("camBtn").addEventListener("click", startCamera);
+$("camStopBtn").addEventListener("click", stopCamera);
+$("captureBtn").addEventListener("click", async () => {
+  if (!pyodide) return;
+  $("captureBtn").disabled = true;
+  try {
+    const blob = await captureFrame();
+    if (!blob) return;
+    pendingFile = blob;
+    updateDecodeButton();
+    await decodeBlob(blob, "the camera capture");
+  } finally {
+    $("captureBtn").disabled = false;
+  }
+});
+document.addEventListener("visibilitychange", () => { if (document.hidden) stopCamera(); });
