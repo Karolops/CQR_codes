@@ -79,7 +79,7 @@ with uncorrectable blocks raise ValueError (never returned).
   phone-good, rgb444/L now 100 % on scanner; one cell got worse (rgb444/Q screen 1/2).
   Best per preset: screen rgb444/L 8.47 net bits/module, scanner rgb444/L 8.47,
   phone-good rgb332/L 5.60, phone-poor rgb111/L 2.08.
-- **Real-world print test done (2026-10-04)**, colour laser print + phone photos, details
+- **Real-world print test done (2026-10-04)**, Brother CMY inkjet print on plain paper + phone photos, details
   in research/04 "Real-world print test": rgb111 decodes with 0 module errors on close-ups
   of 1.02 and 0.51 mm modules and from a whole-page photo at 9 px/module (18/18 symbols
   detected on the page; mono decodes down to 6 px/module). rgb221 / rgb222 / rgb332 /

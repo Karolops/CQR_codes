@@ -155,7 +155,7 @@ Presets (see `cqr/simulate.py` and `tests/evaluate.py` for the exact parameters)
 
 Page `print_test/cqr_print_test_A4.pdf` (18 symbols, all V3 / EC M; rows mono, rgb111,
 rgb221, rgb222, rgb332, rgb333; columns 1.02 / 0.68 / 0.51 mm per module) printed on a
-colour laser printer and photographed with a phone (JPEG, 4:2:0 chroma subsampling).
+Brother inkjet printer (CMY ink tank, model given by the user as "tw730", plain paper) and photographed with a phone (JPEG, 4:2:0 chroma subsampling).
 Photos in `print_test/photos/`: four close-ups (one symbol each, 14-32 px per module)
 and one photo of the whole page (2500 x 3642 px: 13.6 / 9.1 / 6.5 px per module for the
 three columns).
@@ -176,8 +176,10 @@ mean over ~70 modules per colour; the function patterns give the same primaries)
 | yellow  | **206, 172, 12** | 189, 164, 98 |
 | white   | 193, 192, 190 | 193, 209, 203 |
 
-Printing is subtractive (C, M, Y inks), so the secondaries are far from the sum of the
-primaries: cyan has 50 units less green and magenta 55 units less green / 70 less blue than
+Printing is subtractive (C, M, Y inks). On this printer cyan, magenta and yellow are
+single-ink colours, while the "primaries" red, green and blue are two-ink overprints
+(R = M+Y, G = C+Y, B = C+M; blue is the darkest and least saturated of all). The secondaries
+are therefore far from the sum of the camera primaries: cyan has 50 units less green and magenta 55 units less green / 70 less blue than
 an additive model predicts. The original decoder calibrated a 3x3 affine map from the
 R/G/B/white/black references and classified each channel independently in that space;
 on B1 this misread **100 % of the cyan and 98 % of the magenta modules** (24 % module
@@ -233,7 +235,7 @@ Whole page (`python tests/decode_photo.py print_test/photos/CQR_whole_page.jpg -
 
 ### Interpretation
 
-- **rgb111 (3 bits/module) is solid on a laser print**: 0 module errors on close-ups down
+- **rgb111 (3 bits/module) is solid on an inkjet print**: 0 module errors on close-ups down
   to 0.51 mm modules, and it still decodes from a whole-page photo at 9 px/module. That is
   3x the density of mono with the same geometry.
 - **The dense profiles fail for physical reasons, not decoder bugs.** On D1 (rgb222, 64
