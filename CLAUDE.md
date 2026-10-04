@@ -109,14 +109,17 @@ with uncorrectable blocks raise ValueError (never returned).
 
 ## Next steps
 
-1. Close-up photos of C1/C2 on the cmy_cores page in good light (decode with
+1. The user will try the web demo's camera mode on a phone (added 2026-10-04 evening, not
+   yet tested on a real phone: getUserMedia + ImageCapture.takePhoto, video-frame fallback).
+   Expect feedback on that first.
+2. Close-up photos of C1/C2 on the cmy_cores page in good light (decode with
    `--manifest print_test/cmy_cores/manifest.json --id C1`); then photo/glossy paper and the
    driver's plain-sRGB mode; rgb221 with 1.5-2 mm modules or EC Q.
-2. Print-specific palette profile (8 corners + gamut-aware intermediates) and/or a stored
+3. Print-specific palette profile (8 corners + gamut-aware intermediates) and/or a stored
    printer calibration profile (chart with known labels) to get 6+ bits/module in print.
-3. More photos: rgb111 at 0.68 / 0.51 mm from normal phone distance; rgb221 at 1.5-2 mm
+4. More photos: rgb111 at 0.68 / 0.51 mm from normal phone distance; rgb221 at 1.5-2 mm
    modules and under good light to find where 5 bits/module starts working.
-4. Open ideas in TODO.md: structured append, legacy-QR-readable luminance layer, local grid
+5. Open ideas in TODO.md: structured append, legacy-QR-readable luminance layer, local grid
    refinement for lens distortion, soft/annealed EM for > 64 printed colours.
 
 ## How to run the photo tests
@@ -159,6 +162,10 @@ with uncorrectable blocks raise ValueError (never returned).
   with "unexpected EOF" - write patch scripts to a file with the Write tool and run them.
   Scratchpad scripts (diag_photo.py, oracle.py, exp_capacity.py, exp_cmy_cores.py,
   exp_em2.py) are not in the repo; their results are recorded in research/03 and 04.
+- Web demo testing: serve the assembled site with `python -m http.server` from a scratch
+  copy (web/ + cqr/ + examples/) and drive it with the Claude-in-Chrome tools; clicking the
+  sample buttons by element ref was flaky, clicking by coordinates worked. Don't click
+  "Use camera" from automation (permission prompt).
 - Git: identity Karol_Niedbało <KarolNI@o2.pl>; commits end with
   `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Line endings: repo files are
   LF, git warns about CRLF conversion - harmless. The session's changes were left
