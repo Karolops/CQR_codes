@@ -4,7 +4,9 @@ Last session: 2026-10-04 (second session: first real-world print test, then comp
 C/M/Y finder cores + new palette initialisation; cmy_cores page printed and photographed once). Private repo:
 https://github.com/Karolops/CQR_codes (branch `main`, pushed over HTTPS with the GitHub login
 stored in Git Credential Manager, user `Karolops`; GitHub CLI `gh` is NOT installed - the
-repo was created with the REST API).
+repo was created with the REST API). Web demo: https://karolops.github.io/CQR_codes/ (GitHub
+Pages, deployed by .github/workflows/pages.yml on every push to main; web/ + cqr/ + 2 sample
+photos run in Pyodide; the decoder has numpy fallbacks so opencv is not needed there).
 
 ## What the project is
 
