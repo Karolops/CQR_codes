@@ -51,7 +51,11 @@ def main(argv=None) -> int:
         return 0
     if a.cmd == "decode":
         from .decoder import decode_image
-        rep = decode_image(a.image, return_report=True)
+        try:
+            rep = decode_image(a.image, return_report=True)
+        except ValueError as exc:
+            print(f"decode failed: {exc}", file=sys.stderr)
+            return 2
         res = rep.result
         if a.report:
             g = rep.geometry

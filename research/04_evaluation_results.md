@@ -150,3 +150,114 @@ Presets (see `cqr/simulate.py` and `tests/evaluate.py` for the exact parameters)
 | scanner | rgb444 | M | 6.89 | 10.12x |
 | phone-good | rgb332 | L | 5.60 | 8.22x |
 | phone-poor | rgb111 | Q | 1.19 | 1.76x |
+
+## Real-world print test (2026-10-04)
+
+Page `print_test/cqr_print_test_A4.pdf` (18 symbols, all V3 / EC M; rows mono, rgb111,
+rgb221, rgb222, rgb332, rgb333; columns 1.02 / 0.68 / 0.51 mm per module) printed on a
+colour laser printer and photographed with a phone (JPEG, 4:2:0 chroma subsampling).
+Photos in `print_test/photos/`: four close-ups (one symbol each, 14-32 px per module)
+and one photo of the whole page (2500 x 3642 px: 13.6 / 9.1 / 6.5 px per module for the
+three columns).
+
+### What the printer does to the palette
+
+Camera RGB of the printed rgb111 palette, measured on the B1 close-up (data modules,
+mean over ~70 modules per colour; the function patterns give the same primaries):
+
+| ideal | printed (camera RGB) | additive prediction R+G+B-2K |
+|---|---|---|
+| black   | 25, 25, 27 | - |
+| red     | 190, 61, 79 | - |
+| green   | 24, 128, 46 | - |
+| blue    | 29, 70, 132 | - |
+| cyan    | **4, 124, 171** | 28, 173, 151 |
+| magenta | **181, 50, 114** | 194, 106, 184 |
+| yellow  | **206, 172, 12** | 189, 164, 98 |
+| white   | 193, 192, 190 | 193, 209, 203 |
+
+Printing is subtractive (C, M, Y inks), so the secondaries are far from the sum of the
+primaries: cyan has 50 units less green and magenta 55 units less green / 70 less blue than
+an additive model predicts. The original decoder calibrated a 3x3 affine map from the
+R/G/B/white/black references and classified each channel independently in that space;
+on B1 this misread **100 % of the cyan and 98 % of the magenta modules** (24 % module
+error overall) and every close-up failed at the Reed-Solomon stage although geometry,
+timing and format were read perfectly (timing score 1.000, 0 format bit errors).
+
+### Decoder changes made for real prints
+
+1. `cqr/palette.py`: a 3-D palette model - tensor-product polynomial from palette
+   coordinates to camera colour (multilinear part = Neugebauer interpolation between the
+   8 corner colours, plus quadratic terms per axis where the profile has >= 3 levels) -
+   fitted by hard EM on the data modules of the symbol itself (the whitened stream uses all
+   colours equally often), anchored by the labelled function-pattern modules, with the
+   corner colours seeded from directional extremes of the data cloud and the per-axis tone
+   curves seeded from the 1-D quantile centroids (so that gamma / dot gain is absorbed
+   before the EM starts, which matters for the 8- and 16-level channels). Classification is
+   nearest palette colour under a Mahalanobis metric (full 3x3 residual covariance: capture
+   noise is correlated across channels, and a per-channel weighting let k-means split the
+   overlapping red/magenta clusters along the brightness axis). Interference cancellation
+   is done in camera space with the model prediction. The old 1-D classifier remains the
+   fallback.
+2. Retry with a tighter sampling window (2x2 over 30 % of the module instead of 3x3 over
+   50 %) when decoding fails: at 9 px/module neighbour bleed dominates pixel noise.
+3. Two extra darkness thresholds in finder detection (small red finders are chroma-blurred
+   and sit just below the mid threshold on a page photo).
+4. Multi-symbol detection (`decoder.detect_symbols`, `decoder.decode_all`,
+   `tests/decode_photo.py --all`): finder candidates are grouped into (R, G, B) triples
+   with |RG| ~ |RB|, RG perpendicular to RB and a plausible module count.
+5. Results with uncorrectable RS blocks now raise instead of returning garbage.
+
+### Results
+
+Close-ups (`python tests/decode_photo.py print_test/photos/CQR_<id>.jpg --id <id>`):
+
+| id | profile | module | px/module | old decoder | new decoder | module errors | oracle* |
+|---|---|---|---|---|---|---|---|
+| B1 | rgb111 | 1.02 mm | 28 | fail (24 %) | **decoded**, 0 RS corrections | 0.0 % | 0.0 % |
+| B3 | rgb111 | 0.51 mm | 14 | fail (14 %) | **decoded**, 0 RS corrections | 0.0 % | 0.0 % |
+| C1 | rgb221 | 1.02 mm | 28 | fail (51 %) | fail | 28 % | 12 % |
+| D1 | rgb222 | 1.02 mm | 32 | fail (71 %) | fail | 40 % | 7 % |
+
+\* oracle = nearest-centroid classification with the *true* mean camera colour of every
+palette entry, i.e. the ceiling for any colour model.
+
+Whole page (`python tests/decode_photo.py print_test/photos/CQR_whole_page.jpg --all`),
+18/18 symbols detected in 6 s:
+
+| row | profile | 1.02 mm (13.6 px) | 0.68 mm (9.1 px) | 0.51 mm (6.5 px) |
+|---|---|---|---|---|
+| A | mono   | decoded | decoded | decoded (6.1 px/module) |
+| B | rgb111 | decoded | decoded (39 RS corrections, needed the 2x2 retry) | fail (17 % errors, oracle 12 %) |
+| C-F | rgb221 .. rgb333 | fail | fail | fail |
+
+### Interpretation
+
+- **rgb111 (3 bits/module) is solid on a laser print**: 0 module errors on close-ups down
+  to 0.51 mm modules, and it still decodes from a whole-page photo at 9 px/module. That is
+  3x the density of mono with the same geometry.
+- **The dense profiles fail for physical reasons, not decoder bugs.** On D1 (rgb222, 64
+  colours) the nearest printed colour pairs are 1.3 sigma apart (C1: 1.5 sigma); even the
+  oracle classifier makes 7 % (C1: 12 %) module errors, and a lattice EM *started from the
+  true labels* drifts to 12 %. The printer's sRGB -> CMYK conversion compresses and
+  saturates the gamut (e.g. ideal (85,255,255) prints as camera (4,152,191), almost
+  identical to (0,255,255) -> (2,134,183)), and halftone dot gain makes the response
+  non-separable: a supervised triquadratic model still has 21 % errors on D1; only a free
+  per-colour lattice (64 x 3 parameters, unidentifiable without labels) reaches the oracle.
+  To use 5-6 bits/module in print one would need either a one-time printer calibration
+  chart (a stored printer profile: the full lattice measured with known labels) or a
+  print-specific palette whose colours are chosen in the printer's gamut (e.g. the 8
+  corners plus well-separated intermediates such as orange/purple/teal), see TODO.md.
+- **Resolution limit with phone JPEGs**: below ~8 px/module the chroma channels (4:2:0
+  subsampling = half resolution) blur neighbouring modules together; rgb111 oracle error
+  jumps from 3.7 % at 9 px to 12 % at 6.5 px per module, in line with the simulation
+  finding that JPEG chroma subsampling is the main killer. Mono still decodes at 6 px.
+
+### Simulated evaluation re-run with the palette model (2 seeds)
+
+Cells whose success rate changed versus the table above (old, 5 seeds -> new, 2 seeds):
+rgb111 L/M phone-poor 0 % / 80 % -> 100 %; gray4 L/M phone-poor 60 % / 80 % -> 100 %;
+rgb333 M phone-good 0 % -> 100 %; rgb444 L scanner 60 % -> 100 %; rgb444 Q scanner 80 % ->
+100 %; rgb444 Q screen 100 % -> 50 % (one seed, 6 % module errors). Best profile per preset
+is now screen rgb444/L 8.47, scanner rgb444/L 8.47, phone-good rgb332/L 5.60, phone-poor
+rgb111/L 2.08 net bits per module.

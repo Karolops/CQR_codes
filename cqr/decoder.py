@@ -50,7 +50,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from . import codec, layout
+from . import codec, layout, palette
 
 
 # ---------------------------------------------------------------------------
@@ -68,9 +68,11 @@ def load_image(src) -> np.ndarray:
             img = np.stack([img] * 3, axis=-1)
         if img.shape[2] == 4:
             img = img[..., :3]
-    if img.dtype != np.uint8:
-        img = np.clip(img, 0, 255).astype(np.uint8)
-    return np.ascontiguousarray(img.astype(np.float32) / 255.0)
+    if img.dtype == np.uint8:
+        return np.ascontiguousarray(img.astype(np.float32) / 255.0)
+    if np.issubdtype(img.dtype, np.floating) and img.max() <= 1.0:
+        return np.ascontiguousarray(np.clip(img, 0, 1).astype(np.float32))   # already normalised
+    return np.ascontiguousarray(np.clip(img, 0, 255).astype(np.float32) / 255.0)
 
 
 @dataclass
@@ -223,14 +225,19 @@ def _refine_centre(dark: np.ndarray, c: FinderCandidate) -> None:
             c.x, c.y = nx, ny
 
 
-def detect_finders(img: np.ndarray) -> Tuple[FinderCandidate, FinderCandidate, FinderCandidate]:
+def finder_candidates(img: np.ndarray, step: Optional[int] = None) -> List[FinderCandidate]:
+    """All finder-pattern candidates of an image, centre-refined, with colour purity.
+    step: row stride of the run scan (default: ~500 scan lines per image)."""
     h, w = img.shape[:2]
-    step = max(1, min(h, w) // 500)
+    if step is None:
+        step = max(1, min(h, w) // 500)
     dark = darkness_map(img)
     cands: List[FinderCandidate] = []
     # darkness map at several thresholds (robust to blur / contrast loss)
     lo, hi = np.percentile(dark, 5), np.percentile(dark, 95)
-    for f in (0.5, 0.35, 0.65):
+    # small coloured finders (chroma-blurred by JPEG) are only a little darker
+    # than the mid threshold, hence the intermediate steps
+    for f in (0.5, 0.35, 0.65, 0.42, 0.58):
         binary = dark > lo + f * (hi - lo)
         _merge(cands, _scan_candidates(binary, step))
     # purity maps as a second source
@@ -243,11 +250,17 @@ def detect_finders(img: np.ndarray) -> Tuple[FinderCandidate, FinderCandidate, F
             continue
         for f in (0.45, 0.3):
             _merge(cands, _scan_candidates(pm > f * top, step))
-    if len(cands) < 3:
-        raise ValueError(f"could not locate three finder patterns (found {len(cands)})")
     for c in cands:
         _refine_centre(dark, c)
         c.purity = tuple(float(v) for v in _core_purity(img, c))
+    return cands
+
+
+def detect_finders(img: np.ndarray) -> Tuple[FinderCandidate, FinderCandidate, FinderCandidate]:
+    """The red / green / blue finder of the (single) symbol in the image."""
+    cands = finder_candidates(img)
+    if len(cands) < 3:
+        raise ValueError(f"could not locate three finder patterns (found {len(cands)})")
     # assign the best candidate to each colour
     chosen: List[Optional[FinderCandidate]] = [None, None, None]
     pool = sorted(cands, key=lambda c: c.score, reverse=True)
@@ -266,6 +279,60 @@ def detect_finders(img: np.ndarray) -> Tuple[FinderCandidate, FinderCandidate, F
     if missing:
         raise ValueError("could not identify finder pattern(s): " + ", ".join(missing))
     return chosen[0], chosen[1], chosen[2]  # type: ignore[return-value]
+
+
+def detect_symbols(img: np.ndarray, min_purity: float = 0.05, step: Optional[int] = None
+                   ) -> List[Tuple[FinderCandidate, FinderCandidate, FinderCandidate]]:
+    """Group finder candidates into (red, green, blue) triples, one per symbol.
+
+    A valid triple has similar module sizes, |RG| ~ |RB| (the two symbol edges),
+    RG roughly perpendicular to RB, and an edge length of 10..200 modules.
+    Triples are accepted greedily by score so that no finder is used twice."""
+    cands = finder_candidates(img, step)
+    reds = [c for c in cands if c.purity[0] > min_purity]
+    greens = [c for c in cands if c.purity[1] > min_purity]
+    blues = [c for c in cands if c.purity[2] > min_purity]
+    triples = []
+    for r in reds:
+        pr = np.array([r.x, r.y])
+        for g in greens:
+            if g is r:
+                continue
+            pg = np.array([g.x, g.y])
+            v1 = pg - pr
+            d1 = float(np.linalg.norm(v1))
+            m_rg = 0.5 * (r.module + g.module)
+            if not (10 * m_rg < d1 < 200 * m_rg) or max(r.module, g.module) > 1.5 * min(r.module, g.module):
+                continue
+            for b in blues:
+                if b is r or b is g:
+                    continue
+                pb = np.array([b.x, b.y])
+                v2 = pb - pr
+                d2 = float(np.linalg.norm(v2))
+                if not (0.85 < d2 / d1 < 1.18) or max(r.module, b.module) > 1.5 * min(r.module, b.module):
+                    continue
+                cosang = float(v1 @ v2) / (d1 * d2)
+                if abs(cosang) > 0.25:
+                    continue
+                # module count implied by the finder spacing must be close to a valid version size
+                m = (r.module + g.module + b.module) / 3.0
+                n_mod = 0.5 * (d1 + d2) / m + 7.0
+                v_est = (n_mod - 17) / 4.0
+                if abs(v_est - round(v_est)) > 0.35 and n_mod > 30:
+                    continue
+                score = (r.purity[0] + g.purity[1] + b.purity[2]) * (1.5 + r.score + g.score + b.score) \
+                    - 2.0 * abs(cosang) - 2.0 * abs(d2 / d1 - 1.0)
+                triples.append((score, r, g, b))
+    triples.sort(key=lambda t: t[0], reverse=True)
+    used: List[FinderCandidate] = []
+    out = []
+    for score, r, g, b in triples:
+        if any(f is u for f in (r, g, b) for u in used):
+            continue
+        used += [r, g, b]
+        out.append((r, g, b))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -633,6 +700,7 @@ class DecodeReport:
     levels: np.ndarray
     confidence: np.ndarray
     leak: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    palette_fit: Optional["palette.PaletteFit"] = None   # None when the 1-D fallback was used
 
 
 def classify_matrix(corrected: np.ndarray, prof, L: layout.Layout):
@@ -657,10 +725,31 @@ def classify_matrix(corrected: np.ndarray, prof, L: layout.Layout):
 
 
 def decode_image(src, version_hint: Optional[int] = None, return_report: bool = False,
-                 interference_cancellation: bool = True):
+                 interference_cancellation: bool = True, palette_model: bool = True):
     """Decode a CQR symbol from an image (path, PIL image or array)."""
     img = load_image(src)
     finders = detect_finders(img)
+    return decode_with_finders(img, finders, version_hint, return_report, interference_cancellation, palette_model)
+
+
+def decode_all(src, return_report: bool = False, step: Optional[int] = None, **kw
+               ) -> List[Tuple[Tuple[FinderCandidate, ...], object]]:
+    """Decode every symbol found in the image.  Returns a list of
+    (finder triple, result-or-exception) in detection order."""
+    img = load_image(src)
+    out = []
+    for finders in detect_symbols(img, step=step):
+        try:
+            res = decode_with_finders(img, finders, return_report=return_report, **kw)
+        except Exception as exc:  # noqa: BLE001 - report per symbol
+            res = exc
+        out.append((finders, res))
+    return out
+
+
+def decode_with_finders(img: np.ndarray, finders, version_hint: Optional[int] = None,
+                        return_report: bool = False, interference_cancellation: bool = True,
+                        palette_model: bool = True):
     geo = estimate_geometry(img, finders, version_hint)
     L = layout.get_layout(geo.version)
     samples = sample_grid(img, geo)
@@ -671,16 +760,58 @@ def decode_image(src, version_hint: Optional[int] = None, return_report: bool = 
     if geo.version >= 7 and version_hint is None:
         vi = codec.read_version_info(is_dark)
         if vi is not None and vi != geo.version:
-            return decode_image(src, version_hint=vi, return_report=return_report,
-                                interference_cancellation=interference_cancellation)
+            return decode_with_finders(img, finders, version_hint=vi, return_report=return_report,
+                                       interference_cancellation=interference_cancellation,
+                                       palette_model=palette_model)
 
     ec, prof, fmt_err = codec.read_format(is_dark)
-    levels, confs, centroids = classify_matrix(corrected, prof, L)
-    alpha = np.zeros(3)
-    if interference_cancellation:
-        cleaned, alpha = cancel_interference(corrected, levels, prof, L)
-        levels, confs, centroids = classify_matrix(cleaned, prof, L)
-    result = codec.decode_levels(geo.version, ec, prof, levels, confs)
+    # Sampling window: a 3x3 sub-grid over the central 50 % of the module is
+    # best against pixel noise; when that fails (small, blurred modules where
+    # neighbour bleed dominates) retry with a tighter 2x2 window over 30 %.
+    first_error: Optional[Exception] = None
+    for attempt, (sub, spread) in enumerate(((3, 0.5), (2, 0.3))):
+        if attempt:
+            samples = sample_grid(img, geo, sub=sub, spread=spread)
+            cal = calibrate(samples, L)
+            corrected = cal.apply(samples).reshape(samples.shape)
+        try:
+            return _classify_and_decode(samples, corrected, cal, geo, L, ec, prof, fmt_err, return_report,
+                                        interference_cancellation, palette_model)
+        except Exception as exc:  # noqa: BLE001
+            first_error = first_error or exc
+    raise first_error  # type: ignore[misc]
+
+
+def _classify_and_decode(samples, corrected, cal, geo, L, ec, prof, fmt_err, return_report,
+                         interference_cancellation, palette_model):
+
+    # Primary classifier: 3-D palette model fitted to this symbol (handles the
+    # non-additive colour mixing of real printers).  Fallback: per-channel 1-D
+    # classification in the affine-calibrated space.
+    pfit = None
+    result = None
+    if palette_model:
+        try:
+            norm = (samples - cal.black_field) / np.maximum(cal.white_field - cal.black_field, 0.05)
+            pfit = palette.fit_palette(norm, corrected, prof, L, interference=interference_cancellation)
+            result = codec.decode_levels(geo.version, ec, prof, pfit.levels, pfit.confidence)
+            if not result.ok:
+                raise ValueError(f"RS decoding failed for {result.failed_blocks} block(s)")
+        except Exception:
+            pfit = None
+            result = None
+    if result is None:
+        levels, confs, centroids = classify_matrix(corrected, prof, L)
+        alpha = np.zeros(3)
+        if interference_cancellation:
+            cleaned, alpha = cancel_interference(corrected, levels, prof, L)
+            levels, confs, centroids = classify_matrix(cleaned, prof, L)
+        result = codec.decode_levels(geo.version, ec, prof, levels, confs)
+        if not result.ok:
+            raise ValueError(f"RS decoding failed for {result.failed_blocks} block(s)")
+    else:
+        levels, confs, alpha = pfit.levels, pfit.confidence, pfit.leak
+        centroids = [pfit.model.palette_rgb]
     if not return_report:
         return result
-    return DecodeReport(result, geo, cal, centroids, float(confs.mean()), fmt_err, levels, confs, alpha)
+    return DecodeReport(result, geo, cal, centroids, float(confs.mean()), fmt_err, levels, confs, alpha, pfit)

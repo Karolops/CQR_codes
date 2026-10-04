@@ -1,8 +1,9 @@
 # CQR project context (read first)
 
-Last session: 2026-10-04. Private repo: https://github.com/Karolops/CQR_codes (branch `main`,
-pushed over HTTPS with the GitHub login stored in Git Credential Manager, user `Karolops`;
-GitHub CLI `gh` is NOT installed - the repo was created with the REST API).
+Last session: 2026-10-04 (second session: first real-world print test). Private repo:
+https://github.com/Karolops/CQR_codes (branch `main`, pushed over HTTPS with the GitHub login
+stored in Git Credential Manager, user `Karolops`; GitHub CLI `gh` is NOT installed - the
+repo was created with the REST API).
 
 ## What the project is
 
@@ -16,7 +17,7 @@ is a "profile" stored in the 5-bit format payload (2 bits EC level L/M/Q/H in QR
 
 | idx | profile | bits/module | colours | use |
 |---|---|---|---|---|
-| 0 | rgb111 | 3 | 8 | default, print + phone |
+| 0 | rgb111 | 3 | 8 | default, print + phone (the only colour profile proven in print) |
 | 1 | rgb221 | 5 | 32 | good print / scanner |
 | 2 | rgb222 | 6 | 64 | scanner / screen |
 | 3 | rgb332 | 8 | 256 | screen, good phone capture |
@@ -41,50 +42,72 @@ cqr/profiles.py  profiles, Gray coding, format payload packing
 cqr/ecc.py       RS block structure, interleave, whitening (reedsolo; symbol_bits 8/9/12)
 cqr/codec.py     container, encode() -> Symbol(rgb matrix), decode_levels(), read_format()
 cqr/render.py    Symbol -> image (quiet zone param; JPEG saved without chroma subsampling)
-cqr/decoder.py   image -> payload (see pipeline below)
+cqr/palette.py   3-D palette model (printer colour mixing) fitted by EM per symbol - primary classifier
+cqr/decoder.py   image -> payload (see pipeline below); decode_all() for photos with several symbols
 cqr/simulate.py  camera/print simulator (tilt, rotation, blur, noise, cast, gamma, cross-talk, JPEG)
 cqr/__main__.py  CLI: python -m cqr encode|decode|capacity  (encode -p profile -e L/M/Q/H -s px -q quiet -z)
 tests/           pytest suite (43 tests, ~2 min), diag.py, evaluate.py, make_print_page.py, decode_photo.py
-research/        01 prior art, 02 QR structure, 03 design decisions (+ density experiments), 04 evaluation
-examples/        sample PNGs; print_test/ A4 page (pdf/png) + manifest.json with payloads and bboxes
+research/        01 prior art, 02 QR structure, 03 design decisions, 04 evaluation (+ real-world print test)
+examples/        sample PNGs
+print_test/      A4 test page (pdf/png), manifest.json (payloads, bboxes), photos/ (user's phone photos, untracked)
 ```
 
-Decoder pipeline (cqr/decoder.py): finder detection by 1:1:3:1:1 run scanning on the
-min-channel image + purity maps, colour keying of candidates -> version estimate from finder
-spacing with module size corrected by cos(rotation), candidates scored by timing-pattern
-agreement (widened window if poor) -> grid = affine from finders, then alignment patterns
-chained nearest-first with 5x5 template search and homography refit -> module sampling
-(3x3 sub-grid, 50 % spread) -> polynomial white/black shading fields -> 3x3 affine colour
-calibration from R/G/B/white/black -> per-channel k-means seeded at data quantiles (whitened
-stream => uniform level usage) -> neighbour interference cancellation -> confidence per
-module -> RS decoding with erasures on least confident symbols.
+Decoder pipeline (cqr/decoder.py): finder candidates by 1:1:3:1:1 run scanning on the
+min-channel image at 5 thresholds + purity maps -> `detect_finders` (best R/G/B triple) or
+`detect_symbols` (all consistent triples: |RG| ~ |RB|, perpendicular, plausible module
+count) -> version estimate from finder spacing with module size corrected by cos(rotation),
+candidates scored by timing-pattern agreement -> grid = affine from finders, alignment
+patterns chained nearest-first with 5x5 template search and homography refit -> module
+sampling (3x3 sub-grid, 50 % spread; retried with 2x2 / 30 % if decoding fails) ->
+polynomial white/black shading fields -> 3x3 affine colour calibration (used for format
+reading and to seed the palette model) -> **palette model** (cqr/palette.py: tensor-product
+polynomial from palette coordinates to camera colour, multilinear = Neugebauer corner
+interpolation + quadratic terms per axis; corners seeded from directional extremes of the
+data cloud, per-axis tone curves from 1-D quantile centroids; hard EM over the data modules
+anchored by the labelled function modules; interference cancellation in camera space;
+nearest-colour classification under a Mahalanobis metric from the residual covariance) ->
+confidence per module -> RS decoding with erasures on least confident symbols. Fallback if
+that fails: the old per-channel 1-D k-means classifier in affine-corrected space. Results
+with uncorrectable blocks raise ValueError (never returned).
 
 ## Status / results
 
-- All 43 tests pass (`python -m pytest tests -q`). Evaluation (`python tests/evaluate.py`,
-  simulated capture, V6 symbols): screen -> rgb444/L 8.47 net bits/module (12.5x mono);
-  scanner -> rgb444/M 6.89; phone-good -> rgb332/L 5.60 (8.2x); phone-poor -> rgb111/Q 1.19.
-  rgb111 decodes all phone-good cases and phone-poor at Q/H; 8 colours is the realistic phone
-  ceiling (matches literature). JPEG chroma subsampling at < 5 px/module is the main killer
-  (blue channel first).
-- Density experiments done (research/03 section 7): module-aligned RS implemented (doubles
-  tolerable error rate for 9/12-bit profiles); mixed-radix palettes judged marginal; quiet
-  zone 0-2 modules works (encode -q 1); per-channel level tolerance G > R > B.
-- NOT yet done: any real-world test. The user will provide photos of the printed
-  print_test/cqr_print_test_A4.pdf page (symbols A1..F3; rows mono, rgb111, rgb221, rgb222,
-  rgb332, rgb333; columns 1.02 / 0.68 / 0.51 mm modules; all V3, EC M).
+- All 43 tests pass (`python -m pytest tests -q`, ~2 min).
+- Simulated evaluation (`python tests/evaluate.py --seeds 2`, ~10 min; V6 symbols): see
+  research/04 for the table (2 seeds, final code of 2026-10-04). With the palette model:
+  rgb111 and gray4 decode 100 % in the phone-poor preset (was 0-80 %), rgb333/M decodes in
+  phone-good, rgb444/L now 100 % on scanner; one cell got worse (rgb444/Q screen 1/2).
+  Best per preset: screen rgb444/L 8.47 net bits/module, scanner rgb444/L 8.47,
+  phone-good rgb332/L 5.60, phone-poor rgb111/L 2.08.
+- **Real-world print test done (2026-10-04)**, colour laser print + phone photos, details
+  in research/04 "Real-world print test": rgb111 decodes with 0 module errors on close-ups
+  of 1.02 and 0.51 mm modules and from a whole-page photo at 9 px/module (18/18 symbols
+  detected on the page; mono decodes down to 6 px/module). rgb221 / rgb222 / rgb332 /
+  rgb333 all fail in print: the printer (subtractive CMY, gamut compression, dot gain) puts
+  neighbouring palette colours 1.3-1.5 sigma apart; even an oracle classifier with the true
+  colour means has 7-12 % module errors. 8 colours is the practical print ceiling without a
+  printer-specific calibration.
+- Measured printed rgb111 palette (camera RGB, B1): K 25,25,27 R 190,61,79 G 24,128,46
+  B 29,70,132 C 4,124,171 M 181,50,114 Y 206,172,12 W 193,192,190 - secondaries are far
+  from additive (that is why the affine calibration misread 100 % of cyan / magenta).
 
 ## Next steps
 
-1. Decode the user's photos: `python tests/decode_photo.py photo.jpg --id B2` (use `--crop`
-   for one symbol out of a page photo). The decoder expects ONE symbol per image; if the
-   photo shows the whole page, add multi-symbol detection (group finder candidates into
-   consistent R/G/B triples by distance ~ (size-7)*module) or crop by hand.
-2. Expect real-print issues: printer gamut (red vs magenta), yellow/blue weakness, uneven
-   light. Possible fixes: 3-D nearest-centroid classifier, per-region calibration, a
-   print-optimised palette profile (would need a profile slot; gray4 is the least useful).
-3. Open ideas in TODO.md: structured append, legacy-QR-readable luminance layer,
-   local grid refinement for lens distortion, unequal profile 4x8x4 colours (7 bits).
+1. Print-specific palette profile (8 corners + gamut-aware intermediates) and/or a stored
+   printer calibration profile (chart with known labels) to get 5-6 bits/module in print.
+2. More photos: rgb111 at 0.68 / 0.51 mm from normal phone distance; rgb221 at 1.5-2 mm
+   modules and under good light to find where 5 bits/module starts working.
+3. Open ideas in TODO.md: structured append, legacy-QR-readable luminance layer, local grid
+   refinement for lens distortion, soft/annealed EM for > 64 printed colours.
+
+## How to run the photo tests
+
+- One symbol per photo: `python tests/decode_photo.py print_test/photos/CQR_B1.jpg --id B1`
+  (downscales to 2500 px; `--crop x0 y0 x1 y1` to cut one symbol out).
+- Whole page: `python tests/decode_photo.py print_test/photos/CQR_whole_page.jpg --all`
+  (full resolution, ~6 s, prints MATCH/FAILED per symbol against manifest.json).
+- `python -m cqr decode photo.jpg --report` prints geometry / calibration diagnostics;
+  exit code 2 and "decode failed: ..." on failure.
 
 ## Gotchas learned
 
@@ -94,11 +117,23 @@ module -> RS decoding with erasures on least confident symbols.
 - Module size from axis-aligned run scanning is inflated by 1/cos(rotation); corrected in
   estimate_geometry. The finder-centre line is on module row 3.5, NOT the timing row.
 - Byte-sized RS symbols straddle 9/12-bit modules -> that is why GF(2^9)/GF(2^12) are used.
+- Palette EM: hard EM with per-channel weighting split overlapping red/magenta clusters along
+  the brightness axis (capture noise is correlated across channels) - the full-covariance
+  Mahalanobis metric fixed it. For 8/16-level channels the EM only converges when the tone
+  curves are seeded from the 1-D quantile centroids. The 2-level case equals k-means with 8
+  free means. A result with failed RS blocks must raise, otherwise garbage that happens to
+  parse as a container is returned and the fallback/retry never runs.
+- Phone JPEGs: 4:2:0 chroma subsampling makes < 8 px/module hopeless for colour profiles
+  (rgb111 oracle error 3.7 % at 9 px, 12 % at 6.5 px per module). Small red finders are
+  chroma-blurred and need the intermediate darkness thresholds (0.42 / 0.58).
+- load_image accepts float arrays in [0,1] now (passing an already-loaded array through
+  decode_all used to turn it black).
 - This machine: Windows 10, Python 3.12 (Microsoft Store), numpy/pillow/opencv/reedsolo/
   segno/pytest installed. In the Bash tool, long heredocs containing triple quotes fail
   with "unexpected EOF" - write patch scripts to a file with the Write tool and run them.
-  Scratchpad scripts from the last session are not in the repo (exp_rs_field.py,
-  exp_density.py, create_repo.py); their results are recorded in research/03.
+  Scratchpad scripts (diag_photo.py, oracle.py, exp_capacity.py, page.py) are not in the
+  repo; their results are recorded in research/04.
 - Git: identity Karol_Niedbało <KarolNI@o2.pl>; commits end with
   `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Line endings: repo files are
-  LF, git warns about CRLF conversion - harmless.
+  LF, git warns about CRLF conversion - harmless. The session's changes were left
+  uncommitted unless the user asked for a commit.
