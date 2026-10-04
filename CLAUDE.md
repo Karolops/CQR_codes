@@ -166,7 +166,8 @@ with uncorrectable blocks raise ValueError (never returned).
   copy (web/ + cqr/ + examples/) and drive it with the Claude-in-Chrome tools; clicking the
   sample buttons by element ref was flaky, clicking by coordinates worked. Don't click
   "Use camera" from automation (permission prompt).
-- Git: identity Karol_Niedbało <KarolNI@o2.pl>; commits end with
+- Git: author identity is configured locally (do not write it into tracked files; the repo is
+  public); commits end with
   `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Line endings: repo files are
   LF, git warns about CRLF conversion - harmless. The session's changes were left
   uncommitted unless the user asked for a commit.
